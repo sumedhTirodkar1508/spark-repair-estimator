@@ -1,0 +1,8 @@
+.DS_Store
+.vercel/
+node_modules/
+.env
+.env.*
+.claude/
+docs/superpowers/
+*.log
