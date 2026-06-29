@@ -19,6 +19,7 @@
   --color-orange-dark:  #c2410c;   /* pressed/hover */
   --color-orange-light: #fed7aa;   /* tinted accent text */
   --color-orange-bg:    #431407;   /* orange-tinted surface */
+  --color-brand-badge:  #fff7ed;   /* warm light badge behind dark wordmark */
 
   --color-text:         #f9fafb;   /* primary text */
   --color-text-2:       #d1d5db;   /* secondary text */
@@ -261,10 +262,16 @@ ul, ol {
 .app-header__logo,
 .wt-brand-logo {
   display: block;
-  height: 28px;
+  height: 19px;
   width: auto;
-  max-height: 28px;
-  max-width: 140px;
+  max-height: 19px;
+  max-width: 96px;
+  padding: 4px 7px;
+  box-sizing: content-box;
+  background: var(--color-brand-badge);
+  border: 1px solid rgba(254, 215, 170, 0.72);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
   object-fit: contain;
   flex-shrink: 0;
   position: relative; /* sit above the absolutely-centered title */
@@ -1208,7 +1215,7 @@ ul, ol {
 .wt-brand-logo img {
   display: block;
   max-height: 28px;
-  max-width: 140px;
+  max-width: 110px;
   width: auto;
   object-fit: contain;
   flex-shrink: 0;
@@ -1229,7 +1236,7 @@ ul, ol {
 .wt-nav-actions {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -2995,4 +3002,3 @@ a.icon-btn { text-decoration: none; }
     justify-content: flex-end;
   }
 }
-
