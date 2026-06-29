@@ -181,11 +181,17 @@ Unit costs may contain decimals, but final line totals are rounded up to whole d
 The export flow creates a ZIP file containing:
 
 - Excel workbook
-- Estimate sheet
-- Photo Manifest sheet
 - Attached photos in a `photos/` folder
 
-The workbook is generated offline using vendored libraries.
+The Excel workbook includes:
+
+- `Estimate` — selected repair items, unit costs, quantities, line totals, room totals, and grand total
+- `Photo Manifest` — exported photo filenames mapped to room/group/item context, including serial/model metadata when available
+- `Guardrail Warnings` — critical category warnings such as unreviewed HVAC/electrical/roof/plumbing items or missing serial/roof photos
+- `Deal Analyzer` — ARV, offer price, repair estimate, selling/holding costs, target profit, expected profit, MAO, and PASS/WATCH/FAIL status when completed
+- `Review Summary` — reviewed group count, No Work group count, selected item count, critical warning count, photo count, serial photo count, grand estimate, and export timestamp
+
+The workbook and ZIP are generated fully client-side using vendored offline-safe libraries.
 
 ## Backup and Restore
 
@@ -207,16 +213,21 @@ Backup includes:
 
 Restore supports:
 
-- Replace existing project
-- Import as copy
+- Replace Current Project
+- Replace Existing Project
+- Import as Copy
 
-Repeated imports use unique names such as:
+When replacing the current project, the current project ID and project name are preserved by default, while the walkthrough data, rooms, selections, quantities, notes, photos, serial fields, price overrides, and analyzer values are restored from the backup.
+
+Repeated copy imports use unique names such as:
 
 ```txt
 My Project (Copy)
 My Project (Copy 2)
 My Project (Copy 3)
 ```
+
+Restore is intended as the app’s offline-friendly project transfer and recovery mechanism.
 
 ## Storage and Privacy
 
