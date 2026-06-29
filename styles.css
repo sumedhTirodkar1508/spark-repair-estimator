@@ -256,7 +256,10 @@ ul, ol {
   gap: var(--sp-3);
 }
 
-.app-header__logo {
+/* Shared brand logo — dashboard .app-header and the inner-page .wt-brand-row
+   use the same constrained logo so branding is identical everywhere. */
+.app-header__logo,
+.wt-brand-logo {
   display: block;
   height: 28px;
   width: auto;
@@ -264,9 +267,14 @@ ul, ol {
   max-width: 140px;
   object-fit: contain;
   flex-shrink: 0;
+  position: relative; /* sit above the absolutely-centered title */
+  z-index: 1;
 }
 
-.app-header__title {
+/* Shared brand title — absolutely centered across the brand row, logo on the
+   left. Identical on the dashboard and every inner page. */
+.app-header__title,
+.wt-brand-title {
   position: absolute;
   left: 0;
   right: 0;
@@ -1171,27 +1179,23 @@ ul, ol {
    28b. BRAND ROW + 4-ROW WALKTHROUGH HEADER
    ------------------------------------------------------------------ */
 
-/* Brand row — Row 1: centered logo + "Repair Estimator" */
+/* Brand row — Row 1: logo on the left, "Repair Estimator" centered. Matches the
+   dashboard .app-header brand exactly (shared .wt-brand-logo / .wt-brand-title
+   rules above). Reused on walkthrough, price book, review & export, analyzer.
+   Compact height with full safe-area support; relative for the centered title. */
 .wt-brand-row {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-4);
   padding-top: calc(var(--safe-top) + var(--sp-2));
+  padding-left: calc(var(--safe-left) + var(--sp-4));
+  padding-right: calc(var(--safe-right) + var(--sp-4));
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   min-height: 44px;
-}
-
-.wt-brand-logo {
-  display: block;
-  height: 22px;
-  width: auto;
-  max-height: 22px;
-  max-width: 120px;
-  object-fit: contain;
-  flex-shrink: 0;
 }
 
 /* Hard safety net: any brand/header logo image is always constrained, in every
@@ -1208,14 +1212,6 @@ ul, ol {
   width: auto;
   object-fit: contain;
   flex-shrink: 0;
-}
-
-.wt-brand-title {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  color: var(--color-orange-light);
-  white-space: nowrap;
-  letter-spacing: 0.01em;
 }
 
 /* Nav row — Row 2: back + project name + pricebook + reset */
