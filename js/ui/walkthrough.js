@@ -896,33 +896,33 @@ function _endBarHtml(project) {
   if (unreviewed > 0) {
     bulkBtn = `
       <button
-        class="btn btn--ghost btn--sm wt-bulk-btn"
+        class="btn btn--sm wt-bulk-btn"
         data-action="wt-bulk-mark-none"
         aria-label="Mark remaining non-critical groups as No Work Needed"
         title="Mark remaining non-critical groups as No Work Needed. Critical groups stay unreviewed."
-      >Bulk No Work</button>`;
+      >Bulk No-Work</button>`;
   } else if (bulkCandidates > 0) {
     bulkBtn = `
       <button
-        class="btn btn--ghost btn--sm wt-bulk-btn"
+        class="btn btn--sm wt-bulk-btn"
         data-action="wt-bulk-reset"
         aria-label="Undo bulk No Work mark"
         title="Undo the bulk No Work mark; manually-marked groups and groups with work are kept."
-      >Undo Bulk No Work</button>`;
+      >Undo Bulk No-Work</button>`;
   }
 
   return `
     <div class="wt-end-bar">
-      ${bulkBtn}
+      <button
+        class="btn btn--sm wt-reset-btn"
+        data-action="wt-reset-project"
+        aria-label="Reset current project"
+        title="Reset current project"
+      ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:4px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Reset</button>
       <div class="wt-end-bar__right">
+        ${bulkBtn}
         <button
-          class="icon-btn wt-reset-btn"
-          data-action="wt-reset-project"
-          aria-label="Reset current project"
-          title="Reset current project"
-        ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
-        <button
-          class="btn btn--primary wt-summary-btn"
+          class="btn btn--primary btn--sm wt-summary-btn"
           data-action="wt-goto-summary"
           data-project-id="${project.id}"
           aria-label="Review &amp; Export"
@@ -1142,20 +1142,23 @@ async function _handleWtAction(action, el, e) {
       const isNone   = el.dataset.isNone === '1';
       const selCount = parseInt(el.dataset.selCount || '0', 10);
 
-      if (isNone) {
-        setGroupStatus(instanceId, groupKey, 'unreviewed');
-      } else {
-        if (selCount > 0) {
-          const ok = await confirm({
-            title: 'Clear Selections',
-            message: `Clear ${selCount} selected item${selCount !== 1 ? 's' : ''} and mark this group as "No Work Needed"?`,
-            confirmText: 'Clear & Mark',
-            danger: false,
-          });
-          if (!ok) break;
-        }
-        setGroupStatus(instanceId, groupKey, 'none');
+      if (!isNone && selCount > 0) {
+        const ok = await confirm({
+          title: 'Clear Selections',
+          message: `Clear ${selCount} selected item${selCount !== 1 ? 's' : ''} and mark this group as "No Work Needed"?`,
+          confirmText: 'Clear & Mark',
+          danger: false,
+        });
+        if (!ok) break;
       }
+      // Suppress the emit-driven render, then force one guaranteed repaint.
+      // The activeElement guard in _onStateChange can otherwise skip the
+      // re-render when a qty input still holds focus, leaving the pill/button/
+      // progress stale (same root cause as the checkbox detail-panel bug).
+      _suppressRerender = true;
+      setGroupStatus(instanceId, groupKey, isNone ? 'unreviewed' : 'none');
+      _suppressRerender = false;
+      _fullRerender();
       break;
     }
 
@@ -1348,14 +1351,26 @@ async function _handleWtAction(action, el, e) {
       });
       if (!ok) break;
       try {
+        // Blur any focused input so the rerender isn't suppressed by the
+        // activeElement guard and the soft keyboard closes.
+        if (document.activeElement && document.activeElement.blur) {
+          document.activeElement.blur();
+        }
+        // Suppress the emit-driven render so it can't repaint with stale local
+        // UI caches mid-reset; we clear caches and force one clean rerender below.
+        _suppressRerender = true;
         await resetProject();
         _activeSectionId = SECTIONS[0].id;
         _activeSubTab.clear();
         _expandedGroups.clear();
         _photoCache.clear();
         _photoURLs = [];
+        _pendingFocusSelKey = null;
+        _suppressRerender = false;
+        _fullRerender();
         toast('Project reset to blank state', { type: 'info' });
       } catch (err) {
+        _suppressRerender = false;
         console.error('[walkthrough] reset error', err);
         toast('Could not reset project', { type: 'error' });
       }

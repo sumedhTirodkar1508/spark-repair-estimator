@@ -2653,51 +2653,73 @@ a.icon-btn { text-decoration: none; }
   padding-right: calc(var(--safe-right) + var(--sp-2));
 }
 
-/* Fix: end bar — right group (reset icon + review button) never shrinks */
+/* End bar layout: Reset on the left, Bulk No-Work + Review grouped right */
+.wt-end-bar {
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
 .wt-end-bar__right {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
-  flex-shrink: 0;
+  gap: var(--sp-2);
+  flex-shrink: 1;
+  min-width: 0;
 }
 
-/* Reset project icon button — danger red, 44px tap target */
+/* Reset — danger outline, compact, 44px tap target */
 .wt-reset-btn {
-  color: var(--color-danger);
-  min-width: var(--tap-min);
-  min-height: var(--tap-min);
-}
-.wt-reset-btn:hover { color: #dc2626; background-color: var(--color-danger-bg); }
-.wt-reset-btn:active { transform: scale(0.92); }
-
-/* Fix: Review button — slightly smaller padding, still 44px tap target */
-.wt-summary-btn {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
   padding: var(--sp-2) var(--sp-3);
-  gap: var(--sp-1);
   min-height: var(--tap-min);
+  background: transparent;
+  color: var(--color-danger);
+  border: 1.5px solid var(--color-danger);
 }
+.wt-reset-btn:hover { background: var(--color-danger-bg); color: var(--color-danger); }
+.wt-reset-btn:active { transform: scale(0.96); }
 
-/* Fix: end bar bulk button shrinks gracefully */
+/* Bulk No-Work — secondary/outline button, shrinks gracefully */
 .wt-bulk-btn {
+  flex-shrink: 1;
   min-width: 0;
+  min-height: var(--tap-min);
+  padding: var(--sp-2) var(--sp-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 1;
+  background: transparent;
+  color: var(--color-text-2);
+  border: 1.5px solid var(--color-border-light);
+}
+.wt-bulk-btn:hover {
+  background: var(--color-surface-2);
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
 }
 
-/* Fix: end bar safe minimum at 360px — bulk wraps to its own row */
+/* Review — primary orange, never shrinks, 44px tap target */
+.wt-summary-btn {
+  flex-shrink: 0;
+  padding: var(--sp-2) var(--sp-4);
+  gap: var(--sp-1);
+  min-height: var(--tap-min);
+}
+
+/* Narrow screens (≤400px): wrap to two rows — Reset on top, group below */
 @media (max-width: 400px) {
   .wt-end-bar {
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-  .wt-bulk-btn {
-    flex: 1 1 100%;
-    text-align: left;
+  .wt-reset-btn {
+    order: 1;
+    margin-right: auto;
   }
   .wt-end-bar__right {
+    order: 2;
     flex: 0 0 auto;
   }
 }
