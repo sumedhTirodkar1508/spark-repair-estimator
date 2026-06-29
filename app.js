@@ -86,12 +86,15 @@ window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   _deferredInstallPrompt = e;
   console.log('[App] beforeinstallprompt captured');
+  // Show native install banner (Android / desktop Chrome)
+  if (!isStandalone()) { _maybeShowInstallBanner('android'); }
   document.dispatchEvent(new CustomEvent('spark:installable'));
 });
 
 window.addEventListener('appinstalled', () => {
   _deferredInstallPrompt = null;
   console.log('[App] App installed');
+  document.querySelectorAll('.install-hint').forEach(el => el.remove());
   document.dispatchEvent(new CustomEvent('spark:installed'));
 });
 
@@ -302,13 +305,16 @@ function _handleGlobalAction(action, el, event) {
       break;
     }
     case 'install-app': {
-      triggerInstallPrompt().catch(() => {});
+      triggerInstallPrompt().then(outcome => {
+        if (outcome === 'accepted') {
+          document.querySelectorAll('.install-hint').forEach(el => el.remove());
+        }
+      }).catch(() => {});
       break;
     }
     case 'dismiss-install-hint': {
       try { localStorage.setItem('spark.dismissedInstallHint', '1'); } catch (_) {}
-      const hint = document.querySelector('.install-hint');
-      if (hint) hint.remove();
+      document.querySelectorAll('.install-hint').forEach(el => el.remove());
       break;
     }
     // Other actions are handled by view-local delegated handlers
@@ -334,35 +340,73 @@ function setupFlushSave() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 7. iOS A2HS INSTALL HINT                                            */
+/* 7. INSTALL HINTS (iOS A2HS + Android Chrome banner)                 */
 /* ------------------------------------------------------------------ */
 
-function maybeShowIosHint() {
-  if (!isIosSafariForInstall()) return;
-  const dismissed = localStorage.getItem('spark.dismissedInstallHint') === '1';
-  if (dismissed) return;
+/**
+ * Render an install hint banner and append to body.
+ * type: 'ios' | 'android' | 'android-manual'
+ */
+function _maybeShowInstallBanner(type) {
+  if (isStandalone()) return;
+  if (localStorage.getItem('spark.dismissedInstallHint') === '1') return;
+  if (document.querySelector('.install-hint')) return; // already visible
 
-  // Show after a short delay so the app has rendered
-  setTimeout(() => {
-    const existing = document.querySelector('.install-hint');
-    if (existing) return; // already shown
+  const hint = document.createElement('div');
+  hint.className = 'install-hint';
 
-    const hint = document.createElement('div');
-    hint.className = 'install-hint';
+  const dismiss = `<button class="btn btn--ghost btn--sm" data-action="dismiss-install-hint"
+    aria-label="Dismiss install hint" style="flex-shrink:0">✕</button>`;
+
+  if (type === 'android') {
     hint.innerHTML = `
       <div class="install-hint__text">
         <strong>Install Spark Estimator</strong><br>
-        Tap <strong>Share</strong> → <strong>Add to Home Screen</strong> for offline access.
+        Add to home screen for fast offline access.
       </div>
-      <button
-        class="btn btn--ghost btn--sm"
-        data-action="dismiss-install-hint"
-        aria-label="Dismiss install hint"
-        style="flex-shrink:0"
-      >✕</button>
-    `;
-    document.body.appendChild(hint);
-  }, 1500);
+      <button class="btn btn--sm" style="background:var(--color-orange);color:#111;flex-shrink:0"
+        data-action="install-app" aria-label="Install app">Install</button>
+      ${dismiss}`;
+  } else if (type === 'android-manual') {
+    hint.innerHTML = `
+      <div class="install-hint__text">
+        <strong>Install Spark Estimator</strong><br>
+        Open Chrome menu <strong>⋮</strong> → <strong>Add to Home screen</strong>.
+      </div>
+      ${dismiss}`;
+  } else {
+    // ios
+    hint.innerHTML = `
+      <div class="install-hint__text">
+        <strong>Install Spark Estimator</strong><br>
+        Tap <strong>Share ↑</strong> → <strong>Add to Home Screen</strong> for offline access.
+      </div>
+      ${dismiss}`;
+  }
+  document.body.appendChild(hint);
+}
+
+function maybeShowInstallHint() {
+  if (isStandalone()) return;
+
+  // iOS Safari: beforeinstallprompt never fires — show Share instructions.
+  if (isIosSafariForInstall()) {
+    const dismissed = localStorage.getItem('spark.dismissedInstallHint') === '1';
+    if (!dismissed) {
+      setTimeout(() => _maybeShowInstallBanner('ios'), 1500);
+    }
+    return;
+  }
+
+  // Android Chrome: if beforeinstallprompt hasn't fired after 4 s (app already
+  // installed elsewhere, criteria not yet met, etc.), show manual fallback.
+  const ua = navigator.userAgent;
+  if (/android/i.test(ua) && /chrome/i.test(ua) && !/wv/i.test(ua)) {
+    setTimeout(() => {
+      if (_deferredInstallPrompt) return; // banner already shown via beforeinstallprompt
+      _maybeShowInstallBanner('android-manual');
+    }, 4000);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -449,8 +493,8 @@ async function boot() {
     handleRoute(window.location.hash);
   });
 
-  // iOS A2HS hint
-  maybeShowIosHint();
+  // Install hint (iOS A2HS or Android Chrome banner)
+  maybeShowInstallHint();
 
   console.log('[App] Boot complete. Route:', startHash);
 }

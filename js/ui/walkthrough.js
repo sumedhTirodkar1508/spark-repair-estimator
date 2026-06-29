@@ -46,6 +46,7 @@ import {
   resetBulkMarkedGroups,
   renameProject,
   setSerialMeta,
+  resetProject,
 } from '../state.js';
 
 import {
@@ -899,7 +900,7 @@ function _endBarHtml(project) {
         data-action="wt-bulk-mark-none"
         aria-label="Mark remaining non-critical groups as No Work Needed"
         title="Mark remaining non-critical groups as No Work Needed. Critical groups stay unreviewed."
-      >Mark Non-Critical</button>`;
+      >Bulk No Work</button>`;
   } else if (bulkCandidates > 0) {
     bulkBtn = `
       <button
@@ -907,19 +908,27 @@ function _endBarHtml(project) {
         data-action="wt-bulk-reset"
         aria-label="Undo bulk No Work mark"
         title="Undo the bulk No Work mark; manually-marked groups and groups with work are kept."
-      >Undo Bulk Mark</button>`;
+      >Undo Bulk No Work</button>`;
   }
 
   return `
     <div class="wt-end-bar">
       ${bulkBtn}
-      <button
-        class="btn btn--primary wt-summary-btn"
-        data-action="wt-goto-summary"
-        data-project-id="${project.id}"
-        aria-label="Review &amp; Export"
-        title="Review &amp; Export"
-      ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:6px"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l1.8 1.8L15 12"/></svg>Review</button>
+      <div class="wt-end-bar__right">
+        <button
+          class="icon-btn wt-reset-btn"
+          data-action="wt-reset-project"
+          aria-label="Reset current project"
+          title="Reset current project"
+        ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button
+          class="btn btn--primary wt-summary-btn"
+          data-action="wt-goto-summary"
+          data-project-id="${project.id}"
+          aria-label="Review &amp; Export"
+          title="Review &amp; Export"
+        ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:5px"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l1.8 1.8L15 12"/></svg>Review</button>
+      </div>
     </div>
   `;
 }
@@ -1154,15 +1163,18 @@ async function _handleWtAction(action, el, e) {
     case 'wt-toggle-item': {
       const { instanceId, itemId, selKey } = el.dataset;
       if (!instanceId || !itemId) break;
-      // el.checked reflects the NEW state after click
       const willBeChecked = el.checked;
+      // Suppress the emit-driven _onStateChange re-render: on Android standalone/
+      // offline, the activeElement guard (a qty-input still focused from a prior
+      // selection) can silently skip the re-render, leaving the detail panel
+      // closed. Call _fullRerender() directly for a guaranteed, guard-free repaint.
+      _suppressRerender = true;
       toggleItem(instanceId, itemId);
-      // Only auto-focus qty input on non-touch devices — on mobile this jumps
-      // the keyboard open and causes random scroll.
+      _suppressRerender = false;
       if (willBeChecked && !_isTouchDevice()) {
         _pendingFocusSelKey = selKey || `${instanceId}::${itemId}`;
       }
-      // Prevent double-handler from change event
+      _fullRerender();
       e.stopPropagation();
       break;
     }
@@ -1323,6 +1335,30 @@ async function _handleWtAction(action, el, e) {
           : 'No bulk-marked groups to reset',
         { type: reset > 0 ? 'info' : 'info' }
       );
+      break;
+    }
+
+    /* ------ Reset current project ------ */
+    case 'wt-reset-project': {
+      const ok = await confirm({
+        title: 'Reset Current Project?',
+        message: 'This will clear all selections, quantities, notes, No Work markings, photos, serial info, custom items, price overrides, room changes, and deal analyzer values for this project. This cannot be undone.',
+        confirmText: 'Reset Project',
+        danger: true,
+      });
+      if (!ok) break;
+      try {
+        await resetProject();
+        _activeSectionId = SECTIONS[0].id;
+        _activeSubTab.clear();
+        _expandedGroups.clear();
+        _photoCache.clear();
+        _photoURLs = [];
+        toast('Project reset to blank state', { type: 'info' });
+      } catch (err) {
+        console.error('[walkthrough] reset error', err);
+        toast('Could not reset project', { type: 'error' });
+      }
       break;
     }
 

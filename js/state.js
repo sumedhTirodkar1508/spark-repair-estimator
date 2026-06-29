@@ -292,6 +292,37 @@ export async function deleteProject(id) {
   }
 }
 
+/**
+ * Reset the active project to a blank state, preserving only its id, name,
+ * createdAt, and schemaVersion. Clears all selections, serials, groupStatus,
+ * priceOverrides, customItems, deletedItemIds, bulkMarkedGroups, and analyzer.
+ * Deletes all photos for this project from IndexedDB. Does NOT affect global
+ * prices or other projects.
+ * @returns {Promise<void>}
+ */
+export async function resetProject() {
+  if (!activeProject) return;
+  await deletePhotosByProject(activeProject.id);
+  activeProject.rooms = [
+    { instanceId: 'interior', roomType: 'interior-general', label: 'Interior / General', removable: false },
+    { instanceId: 'kitchen',  roomType: 'kitchen',           label: 'Kitchen',            removable: false },
+    { instanceId: 'systems',  roomType: 'systems',           label: 'Systems & Structure', removable: false },
+    { instanceId: 'exterior', roomType: 'exterior',          label: 'Exterior',            removable: false },
+    { instanceId: 'bath_1',   roomType: 'bathroom',          label: 'Bathroom 1',          removable: true  },
+  ];
+  activeProject.selections     = {};
+  activeProject.serials        = {};
+  activeProject.groupStatus    = {};
+  activeProject.priceOverrides = {};
+  activeProject.customItems    = [];
+  activeProject.deletedItemIds = [];
+  activeProject.bulkMarkedGroups = [];
+  activeProject.analyzer       = null;
+  activeProject.updatedAt      = new Date().toISOString();
+  await putProject(activeProject);
+  emit();
+}
+
 // ---------------------------------------------------------------------------
 // Rooms — all operate on activeProject
 // ---------------------------------------------------------------------------

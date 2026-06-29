@@ -2653,12 +2653,32 @@ a.icon-btn { text-decoration: none; }
   padding-right: calc(var(--safe-right) + var(--sp-2));
 }
 
-/* Fix: end bar — Review button must never shrink or wrap */
-.wt-summary-btn {
+/* Fix: end bar — right group (reset icon + review button) never shrinks */
+.wt-end-bar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
   flex-shrink: 0;
 }
 
-/* Fix: end bar bulk button shrinks gracefully; review button stays visible */
+/* Reset project icon button — danger red, 44px tap target */
+.wt-reset-btn {
+  color: var(--color-danger);
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+}
+.wt-reset-btn:hover { color: #dc2626; background-color: var(--color-danger-bg); }
+.wt-reset-btn:active { transform: scale(0.92); }
+
+/* Fix: Review button — slightly smaller padding, still 44px tap target */
+.wt-summary-btn {
+  flex-shrink: 0;
+  padding: var(--sp-2) var(--sp-3);
+  gap: var(--sp-1);
+  min-height: var(--tap-min);
+}
+
+/* Fix: end bar bulk button shrinks gracefully */
 .wt-bulk-btn {
   min-width: 0;
   overflow: hidden;
@@ -2667,8 +2687,7 @@ a.icon-btn { text-decoration: none; }
   flex-shrink: 1;
 }
 
-/* Fix: end bar safe minimum at 360px — stack vertically only if both buttons
-   would otherwise overflow. Use flex-wrap so the Review button always appears. */
+/* Fix: end bar safe minimum at 360px — bulk wraps to its own row */
 @media (max-width: 400px) {
   .wt-end-bar {
     flex-wrap: wrap;
@@ -2678,7 +2697,7 @@ a.icon-btn { text-decoration: none; }
     flex: 1 1 100%;
     text-align: left;
   }
-  .wt-summary-btn {
+  .wt-end-bar__right {
     flex: 0 0 auto;
   }
 }
