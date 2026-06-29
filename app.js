@@ -361,7 +361,7 @@ function _maybeShowInstallBanner(type) {
   if (type === 'android') {
     hint.innerHTML = `
       <div class="install-hint__text">
-        <strong>Install Spark Estimator</strong><br>
+        <strong>Install Spark Repair Estimator</strong><br>
         Add to home screen for fast offline access.
       </div>
       <button class="btn btn--sm" style="background:var(--color-orange);color:#111;flex-shrink:0"
@@ -370,7 +370,7 @@ function _maybeShowInstallBanner(type) {
   } else if (type === 'android-manual') {
     hint.innerHTML = `
       <div class="install-hint__text">
-        <strong>Install Spark Estimator</strong><br>
+        <strong>Install Spark Repair Estimator</strong><br>
         Open Chrome menu <strong>⋮</strong> → <strong>Add to Home screen</strong>.
       </div>
       ${dismiss}`;
@@ -378,7 +378,7 @@ function _maybeShowInstallBanner(type) {
     // ios
     hint.innerHTML = `
       <div class="install-hint__text">
-        <strong>Install Spark Estimator</strong><br>
+        <strong>Install Spark Repair Estimator</strong><br>
         Tap <strong>Share ↑</strong> → <strong>Add to Home Screen</strong> for offline access.
       </div>
       ${dismiss}`;

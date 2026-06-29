@@ -18,8 +18,15 @@ import {
   getGlobalPrices,
   onChange,
   switchProject,
+  reloadActiveProject,
   bulkMarkNonCriticalNone,
+  getEffectiveStatus,
 } from '../state.js';
+
+import {
+  getGroupsForInstance,
+  getItemsForGroup,
+} from '../catalog.js';
 
 import {
   buildEstimateRows,
@@ -123,11 +130,12 @@ async function _renderContent(rootEl) {
   const globalPrices = getGlobalPrices();
   const projectId    = project ? project.id : '';
 
-  // Build photosByRefKey map for guardrails
+  // Build photosByRefKey map for guardrails; also keep allPhotos for completeness stats
   let photosByRefKey = {};
+  let allPhotos = [];
   if (project) {
     try {
-      const allPhotos = await getPhotos(project.id);
+      allPhotos = await getPhotos(project.id);
       for (const ph of allPhotos) {
         const rk = ph.refKey || '';
         if (!photosByRefKey[rk]) {
@@ -147,16 +155,23 @@ async function _renderContent(rootEl) {
   const grandTotal  = project ? computeGrandTotal(project, globalPrices) : 0;
   const warnings    = project ? getCriticalWarnings(project, photosByRefKey, globalPrices) : [];
   const nonCritLen  = project ? getNonCriticalUnreviewed(project).length : 0;
+  const completeness = project ? _computeCompleteness(project, allPhotos, warnings) : null;
 
   rootEl.innerHTML = `
-    <header class="app-header">
-      <a href="#/project/${_esc(projectId)}" class="icon-btn" aria-label="Back to walkthrough" title="Back to walkthrough">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M19 12H5M12 5l-7 7 7 7"/>
-        </svg>
-      </a>
-      <span class="app-header__title">Review &amp; Export</span>
-    </header>
+    <div class="page-header-stack">
+      <div class="wt-brand-row">
+        <img src="./assets/logo.png" alt="" class="wt-brand-logo" aria-hidden="true" />
+        <span class="wt-brand-title">Repair Estimator</span>
+      </div>
+      <header class="app-header">
+        <a href="#/project/${_esc(projectId)}" class="icon-btn" aria-label="Back to walkthrough" title="Back to walkthrough">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+          </svg>
+        </a>
+        <span class="app-header__title">Review &amp; Export</span>
+      </header>
+    </div>
 
     <div class="page-content sum-page">
 
@@ -166,6 +181,8 @@ async function _renderContent(rootEl) {
           <a href="#/" class="btn btn--primary" style="margin-top:var(--sp-4)">Go to Projects</a>
         </div>
       `}
+
+      ${project && completeness ? _renderCompleteness(completeness) : ''}
 
       ${project ? `
         <!-- ── Guardrail Warnings ───────────────────────────────────────── -->
@@ -216,14 +233,64 @@ async function _renderContent(rootEl) {
             </label>
           </div>
           <p class="sum-note">
-            Backup includes all project data and photos. Restore supports "Replace" (overwrite)
-            or "Import as Copy" (new project).
+            Backup includes all project data and photos. Restore lets you "Replace Current Project"
+            (overwrite this project) or "Import as Copy" (create a new project).
           </p>
         </section>
       ` : ''}
 
     </div>
   `;
+}
+
+// ============================================================================
+// _computeCompleteness / _renderCompleteness
+// ============================================================================
+
+function _computeCompleteness(project, photos, warnings) {
+  let totalGroups = 0, reviewedGroups = 0, noWorkGroups = 0, selectedItems = 0;
+  const selections = project.selections || {};
+
+  for (const room of (project.rooms || [])) {
+    const groups = getGroupsForInstance(room.instanceId, room.roomType);
+    for (const grp of groups) {
+      totalGroups++;
+      const st = getEffectiveStatus(room.instanceId, grp.key, project);
+      if (st !== 'unreviewed') reviewedGroups++;
+      if (st === 'none') noWorkGroups++;
+
+      for (const item of getItemsForGroup(grp.key, project)) {
+        const entry = selections[`${room.instanceId}::${item.id}`];
+        if (entry !== undefined && parseFloat(entry.qty) > 0) selectedItems++;
+      }
+    }
+  }
+
+  return {
+    totalGroups,
+    reviewedGroups,
+    noWorkGroups,
+    selectedItems,
+    photoCount:    photos.length,
+    serialPhotos:  photos.filter(p => p.kind === 'serial').length,
+    criticalCount: warnings.length,
+  };
+}
+
+function _renderCompleteness(c) {
+  const ok = c.criticalCount === 0;
+  const parts = [
+    `${c.reviewedGroups}/${c.totalGroups} groups reviewed`,
+    `${c.selectedItems} work item${c.selectedItems !== 1 ? 's' : ''}`,
+    ok
+      ? 'no critical warnings'
+      : `${c.criticalCount} critical warning${c.criticalCount !== 1 ? 's' : ''}`,
+    `${c.photoCount} photo${c.photoCount !== 1 ? 's' : ''}`,
+  ];
+  return `
+    <div class="sum-completeness sum-completeness--${ok ? 'ok' : 'warn'}">
+      ${parts.map(p => `<span class="sum-completeness__chip">${p}</span>`).join('<span class="sum-completeness__sep">·</span>')}
+    </div>`;
 }
 
 // ============================================================================
@@ -418,46 +485,53 @@ async function _doRestore(file) {
       return;
     }
 
-    const sourceId = parsed.project && parsed.project.id;
-    const exists   = sourceId ? await backup.projectIdExists(sourceId) : false;
-
-    // Determine import mode
-    let mode;
-    if (exists) {
-      // Ask user: Replace or Copy
-      const choice = await showSheet({
-        title: 'Project Already Exists',
-        html: `<p style="color:var(--color-text-2);font-size:var(--text-sm);margin:0 0 var(--sp-4)">
-          A project with the same ID already exists.
-          Choose how to import this backup:
-        </p>`,
-        actions: [
-          { label: 'Replace (overwrite existing)',  value: 'replace', danger: true },
-          { label: 'Import as Copy (new project)',  value: 'copy',    danger: false },
-          { label: 'Cancel',                        value: null,       danger: false },
-        ],
-      });
-      if (!choice) return;
-      mode = choice;
-    } else {
-      mode = 'replace'; // no conflict — just import as-is with original id
+    const current = getActiveProject();
+    if (!current) {
+      toast('No active project to restore into.', { type: 'error' });
+      return;
     }
 
-    // Confirm destructive replace
-    if (mode === 'replace' && exists) {
+    const backupName = (parsed.project && parsed.project.name) || 'this backup';
+
+    // We are restoring while inside a current project, so ALWAYS ask — even if
+    // the backup's project id does not already exist. This prevents silently
+    // creating a duplicate-named project.
+    const choice = await showSheet({
+      title: 'Restore from Backup',
+      html: `<p style="color:var(--color-text-2);font-size:var(--text-sm);margin:0 0 var(--sp-4)">
+        Restoring "<strong>${_esc(backupName)}</strong>". How would you like to import it?
+      </p>`,
+      actions: [
+        { label: 'Replace Current Project', value: 'replace-current', danger: true },
+        { label: 'Import as Copy',          value: 'copy',            danger: false },
+        { label: 'Cancel',                  value: null,              danger: false },
+      ],
+    });
+    if (!choice) return;
+
+    if (choice === 'replace-current') {
       const confirmed = await confirm({
-        title:       'Replace Project',
-        message:     'This will overwrite the existing project and all its data. Are you sure?',
+        title:       'Replace Current Project',
+        message:     `This will overwrite "${current.name}" and all its data with the backup. This cannot be undone.`,
         confirmText: 'Replace',
         danger:      true,
       });
       if (!confirmed) return;
-    }
 
-    const resultId = await backup.importBackup(parsed, mode);
-    await switchProject(resultId);
-    window.location.hash = `#/project/${resultId}`;
-    toast('Backup restored successfully.', { type: 'success' });
+      // Replace the CURRENT project record in place (keeps the same id so the
+      // route stays valid), then reload the active project WITHOUT flushing the
+      // stale in-memory copy back over the freshly-restored record.
+      await backup.importBackup(parsed, { mode: 'replace-current', targetProjectId: current.id });
+      await reloadActiveProject(current.id);
+      window.location.hash = `#/project/${current.id}`;
+      toast('Backup restored into current project.', { type: 'success' });
+    } else {
+      // Import as a brand-new project with a unique name.
+      const newId = await backup.importBackup(parsed, { mode: 'copy' });
+      await switchProject(newId);
+      window.location.hash = `#/project/${newId}`;
+      toast('Backup imported as a copy.', { type: 'success' });
+    }
   } catch (err) {
     console.error('[summary] restore error', err);
     toast(`Restore failed: ${err.message || err}`, { type: 'error' });

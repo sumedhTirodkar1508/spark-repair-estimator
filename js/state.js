@@ -35,6 +35,8 @@ import {
   CRITICAL_GROUP_KEYS,
 } from './catalog.js';
 
+import { computeGrandTotal } from './pricing.js';
+
 // ---------------------------------------------------------------------------
 // Module-level mutable state
 // ---------------------------------------------------------------------------
@@ -185,6 +187,26 @@ export async function listProjects() {
 }
 
 /**
+ * Like listProjects(), but each entry also carries the repair-estimate total
+ * (computed from the FULL project record + current globalPrices) and a cheap
+ * selected-item count. Used by the dashboard so cards show the same total as
+ * the walkthrough header. Photos are never loaded here.
+ * @returns {Promise<Array<{id:string,name:string,updatedAt:string,total:number,selectedCount:number}>>}
+ */
+export async function listProjectsWithTotals() {
+  const all = await getAllProjects();
+  all.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  return all.map(p => {
+    let total = 0;
+    try { total = computeGrandTotal(p, globalPrices); } catch (_) { total = 0; }
+    const selectedCount = p && p.selections
+      ? Object.values(p.selections).filter(e => parseFloat(e && e.qty) > 0).length
+      : 0;
+    return { id: p.id, name: p.name, updatedAt: p.updatedAt, total, selectedCount };
+  });
+}
+
+/**
  * Build a fresh project record seeded with 4 singletons + bath_1.
  * Persists it, makes it active, and emits.
  * @param {string} name
@@ -233,6 +255,31 @@ export async function switchProject(id) {
   await flushSave();
   const project = await getProject(id);
   if (!project) throw new Error(`switchProject: project "${id}" not found`);
+  activeProject = project;
+  localStorage.setItem('spark.activeProjectId', id);
+  emit();
+}
+
+/**
+ * Reload the active project record from IndexedDB, DISCARDING any pending
+ * in-memory changes (and any debounced save). Use this after an out-of-band
+ * write to the active project's record — e.g. restoring a backup into the
+ * current project — so the stale in-memory copy is not flushed back over the
+ * freshly-written record.
+ *
+ * Unlike switchProject(), this does NOT call flushSave() first.
+ *
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function reloadActiveProject(id) {
+  // Drop any pending debounced save for the now-stale in-memory project.
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  const project = await getProject(id);
+  if (!project) throw new Error(`reloadActiveProject: project "${id}" not found`);
   activeProject = project;
   localStorage.setItem('spark.activeProjectId', id);
   emit();

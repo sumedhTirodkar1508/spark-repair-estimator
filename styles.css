@@ -257,9 +257,13 @@ ul, ol {
 }
 
 .app-header__logo {
+  display: block;
   height: 28px;
   width: auto;
+  max-height: 28px;
+  max-width: 140px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .app-header__title {
@@ -1144,6 +1148,8 @@ ul, ol {
 .wt-progress-wrap {
   padding: var(--sp-2) var(--sp-4);
   background-color: var(--color-surface);
+  /* Subtle separator from the section tabs below */
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* Sticky stack: walkthrough header + progress bar + section tabs stick
@@ -1159,6 +1165,239 @@ ul, ol {
    let the stack carry the sticking so the whole group moves together. */
 .wt-sticky-stack .app-header {
   position: relative;
+}
+
+/* ------------------------------------------------------------------
+   28b. BRAND ROW + 4-ROW WALKTHROUGH HEADER
+   ------------------------------------------------------------------ */
+
+/* Brand row — Row 1: centered logo + "Repair Estimator" */
+.wt-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  padding-top: calc(var(--safe-top) + var(--sp-2));
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 44px;
+}
+
+.wt-brand-logo {
+  display: block;
+  height: 22px;
+  width: auto;
+  max-height: 22px;
+  max-width: 120px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* Hard safety net: any brand/header logo image is always constrained, in every
+   context (online, offline, installed PWA, all screens). Prevents the natural
+   image dimensions from ever blowing up the header. */
+.wt-brand-row img,
+.app-header__logo,
+.app-header__logo img,
+.wt-brand-logo,
+.wt-brand-logo img {
+  display: block;
+  max-height: 28px;
+  max-width: 140px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.wt-brand-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--color-orange-light);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+/* Nav row — Row 2: back + project name + pricebook + reset */
+.wt-nav-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) calc(var(--safe-left) + var(--sp-2));
+  padding-right: calc(var(--safe-right) + var(--sp-2));
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  min-height: var(--tap-min);
+}
+
+.wt-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Nav action buttons — icon + text ("Rates" / "Reset"), 44px tap target */
+.wt-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  min-height: var(--tap-min);
+  /* Compact internal padding — keeps the 44px tap target via min-height while
+     trimming the bulky horizontal padding so both labels fit the header. */
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1.5px solid var(--color-border-light);
+  color: var(--color-text-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.wt-nav-btn svg { flex-shrink: 0; }
+.wt-nav-btn__label { white-space: nowrap; }
+.wt-nav-btn:hover {
+  background: var(--color-surface-2);
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+.wt-nav-btn:active { transform: scale(0.97); }
+
+/* Reset — danger variant */
+.wt-nav-btn--danger {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.wt-nav-btn--danger:hover {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Meta row — Row 3: big total left, progress cluster right */
+.wt-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) calc(var(--safe-left) + var(--sp-4));
+  padding-right: calc(var(--safe-right) + var(--sp-4));
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  gap: var(--sp-3);
+  min-height: 52px;
+}
+
+.wt-total-big {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  color: var(--color-orange-light);
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+
+/* Progress cluster — single compact line, vertically centered with the total.
+   "11/146 · 7/37 groups". Wraps only on very narrow widths. */
+.wt-progress-cluster {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: var(--text-sm);
+  line-height: 1.2;
+}
+
+.wt-progress-cluster .wt-progress-main {
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.wt-progress-cluster .wt-progress-sub {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* page-header-stack: sticky brand + app-header for summary / pricebook / analyzer */
+.page-header-stack {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  background-color: var(--color-surface);
+}
+
+/* Brand row is the topmost element in the stack, handles safe-top via .wt-brand-row.
+   The enclosed .app-header must NOT double-count it. */
+.page-header-stack .app-header {
+  position: relative;
+  padding-top: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ── Speech dictation (Serial / Model fields) ───────────────────── */
+
+.wt-serial-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.wt-serial-input-wrap .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.wt-dictate-btn {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
+  color: var(--color-text-muted);
+}
+
+.wt-dictate-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+}
+
+.wt-dictate-btn.is-listening {
+  color: var(--color-orange-light);
+  animation: wt-mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes wt-mic-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-dictate-btn.is-listening {
+    animation: none;
+    outline: 2px solid var(--color-orange);
+    outline-offset: 2px;
+  }
+}
+
+.wt-serial-tip {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--sp-1);
+  margin-bottom: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  line-height: var(--leading-normal);
 }
 
 /* ------------------------------------------------------------------
@@ -1519,6 +1758,30 @@ ul, ol {
 
 .dash-project-row:hover {
   background-color: var(--color-surface-2);
+}
+
+/* Project repair-estimate line on each dashboard card */
+.dash-estimate {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  margin-top: 4px;
+  font-size: var(--text-sm);
+}
+
+.dash-estimate__label {
+  color: var(--color-text-muted);
+}
+
+.dash-estimate__value {
+  font-weight: var(--weight-semibold);
+  color: var(--color-orange-light);
+}
+
+.dash-estimate__count {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 /* Rename (blue) / Delete (red) action buttons — tinted bg + border so the
@@ -2075,6 +2338,32 @@ ul, ol {
   padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--color-border);
 }
+
+/* ── Review Completeness bar ────────────────────────────── */
+
+.sum-completeness {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  font-size: var(--text-sm);
+  padding: var(--sp-3) var(--sp-4);
+  margin: var(--sp-4) var(--sp-4) 0;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+}
+.sum-completeness--ok {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.2);
+  color: #16a34a;
+}
+.sum-completeness--warn {
+  background: rgba(220, 38, 38, 0.07);
+  border-color: rgba(220, 38, 38, 0.18);
+  color: var(--color-danger);
+}
+.sum-completeness__chip { white-space: nowrap; }
+.sum-completeness__sep  { color: var(--color-text-muted); opacity: 0.45; }
 
 /* ── Guardrail Warnings ──────────────────────────────────── */
 
@@ -2653,33 +2942,25 @@ a.icon-btn { text-decoration: none; }
   padding-right: calc(var(--safe-right) + var(--sp-2));
 }
 
-/* End bar layout: Reset on the left, Bulk No-Work + Review grouped right */
+/* End bar layout: flexible spacer (left) + Bulk No-Work & Review grouped right */
 .wt-end-bar {
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--sp-2);
+}
+
+.wt-end-bar__spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .wt-end-bar__right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-2);
   flex-shrink: 1;
   min-width: 0;
 }
-
-/* Reset — danger outline, compact, 44px tap target */
-.wt-reset-btn {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  padding: var(--sp-2) var(--sp-3);
-  min-height: var(--tap-min);
-  background: transparent;
-  color: var(--color-danger);
-  border: 1.5px solid var(--color-danger);
-}
-.wt-reset-btn:hover { background: var(--color-danger-bg); color: var(--color-danger); }
-.wt-reset-btn:active { transform: scale(0.96); }
 
 /* Bulk No-Work — secondary/outline button, shrinks gracefully */
 .wt-bulk-btn {
@@ -2708,19 +2989,14 @@ a.icon-btn { text-decoration: none; }
   min-height: var(--tap-min);
 }
 
-/* Narrow screens (≤400px): wrap to two rows — Reset on top, group below */
-@media (max-width: 400px) {
-  .wt-end-bar {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-  .wt-reset-btn {
-    order: 1;
-    margin-right: auto;
+/* Narrow screens (≤360px): hide the spacer; let the right group use full width */
+@media (max-width: 360px) {
+  .wt-end-bar__spacer {
+    display: none;
   }
   .wt-end-bar__right {
-    order: 2;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    justify-content: flex-end;
   }
 }
 

@@ -1,6 +1,6 @@
 {
-  "name": "Spark Estimator",
-  "short_name": "Spark Est",
+  "name": "Spark Repair Estimator",
+  "short_name": "Repair Estimator",
   "description": "Mobile-first repair cost estimator for distressed-home walkthroughs. Room-by-room line items, photo capture, offline export.",
   "start_url": "./",
   "scope": "./",

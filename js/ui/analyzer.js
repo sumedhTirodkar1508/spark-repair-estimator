@@ -109,12 +109,18 @@ function _renderFull(rootEl, project, globalPrices) {
   const deal        = computeDeal(inputs, repairTotal);
 
   rootEl.innerHTML = `
-    <header class="app-header">
-      <a href="#/project/${_esc(projectId)}/summary" class="btn btn--ghost btn--icon" aria-label="Back">
-        ←
-      </a>
-      <span class="app-header__title">Deal Analyzer</span>
-    </header>
+    <div class="page-header-stack">
+      <div class="wt-brand-row">
+        <img src="./assets/logo.png" alt="" class="wt-brand-logo" aria-hidden="true" />
+        <span class="wt-brand-title">Repair Estimator</span>
+      </div>
+      <header class="app-header">
+        <a href="#/project/${_esc(projectId)}/summary" class="icon-btn" aria-label="Back to Review &amp; Export" title="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        </a>
+        <span class="app-header__title">Deal Analyzer</span>
+      </header>
+    </div>
 
     <div class="page-content an-page">
 

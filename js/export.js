@@ -30,9 +30,14 @@ import {
   computeGroupTotal,
   computeInstanceTotal,
   computeGrandTotal,
+  formatMoney,
 } from './pricing.js';
 
 import { getPhotos } from './photos.js';
+
+import { getCriticalWarnings } from './guardrails.js';
+import { computeDeal } from './dealAnalyzer.js';
+import { getEffectiveStatus } from './state.js';
 
 // ============================================================================
 // Vendor lazy-loader (offline-safe, idempotent)
@@ -136,6 +141,9 @@ function _stampStr() {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
+
+/** Coerce to finite number; 0 for blank/null/NaN/undefined. */
+function _n(v) { const n = Number(v); return isFinite(n) ? n : 0; }
 
 /**
  * Build a deduped, safe, unique filename for each photo record.
@@ -439,6 +447,7 @@ export function buildPhotoManifestRows(project, photos) {
  */
 export function buildWorkbook(project, globalPrices, photos) {
   const XLSX = window.XLSX;
+  const grandTotal = computeGrandTotal(project, globalPrices);
 
   // ── Estimate sheet ─────────────────────────────────────────────────────────
 
@@ -568,7 +577,6 @@ export function buildWorkbook(project, globalPrices, photos) {
   }
 
   // ── Grand Total row ──
-  const grandTotal = computeGrandTotal(project, globalPrices);
   const gtStyle  = _s({ bold: true, sz: 13, color: { rgb: 'FFFFFF' } }, '111827', 'center');
   const gtStyleR = _s({ bold: true, sz: 13, color: { rgb: 'FFFFFF' } }, '111827', 'right');
 
@@ -638,11 +646,157 @@ export function buildWorkbook(project, globalPrices, photos) {
     { wch: 22 }, // capturedAt
   ];
 
+  // ── Build photosByRefKey for guardrail + review sheets ───────────────────────
+  const photosByRefKey = {};
+  for (const ph of (photos || [])) {
+    const rk = ph.refKey || '';
+    if (!photosByRefKey[rk]) photosByRefKey[rk] = { serialCount: 0, generalCount: 0, total: 0 };
+    photosByRefKey[rk].total++;
+    if (ph.kind === 'serial')  photosByRefKey[rk].serialCount++;
+    if (ph.kind === 'general') photosByRefKey[rk].generalCount++;
+  }
+
+  // ── Guardrail Warnings sheet ─────────────────────────────────────────────
+  const warnings = getCriticalWarnings(project, photosByRefKey, globalPrices);
+  const wg = {};
+  {
+    const labelMap = {};
+    for (const room of (project.rooms || [])) labelMap[room.instanceId] = room.label || room.instanceId;
+
+    const hdrS = _s({ bold: true, sz: 10, color: { rgb: '374151' } }, 'FFF7ED', 'left', true);
+    const WG_COLS = ['Severity', 'Type', 'Room', 'Group', 'Item ID', 'Message'];
+    WG_COLS.forEach((h, c) => { wg[XLSX.utils.encode_cell({ r: 0, c })] = { v: h, t: 's', s: hdrS }; });
+
+    let lastRow;
+    if (warnings.length === 0) {
+      const okS = _s({ sz: 10, color: { rgb: '166534' } }, 'F0FDF4', 'left');
+      ['OK', '', '', '', '', 'All critical categories reviewed — no issues found.'].forEach((v, c) => {
+        wg[XLSX.utils.encode_cell({ r: 1, c })] = { v, t: 's', s: okS };
+      });
+      lastRow = 1;
+    } else {
+      warnings.forEach((w, ri) => {
+        const r = ri + 1;
+        const isRed = w.type === 'critical-unreviewed';
+        const rowS = _s({ sz: 10, color: { rgb: isRed ? 'B91C1C' : 'B45309' } }, isRed ? 'FEF2F2' : 'FFFBEB', 'left');
+        const room  = labelMap[w.instanceId] || w.instanceId || '';
+        const group = GROUPS[w.groupKey] ? GROUPS[w.groupKey].label : (w.groupKey || '');
+        ['Critical', w.type || '', room, group, w.itemId || '', w.message || ''].forEach((v, c) => {
+          wg[XLSX.utils.encode_cell({ r, c })] = { v: String(v), t: 's', s: rowS };
+        });
+      });
+      lastRow = warnings.length;
+    }
+    wg['!ref']  = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: 5 } });
+    wg['!cols'] = [{ wch: 10 }, { wch: 24 }, { wch: 22 }, { wch: 28 }, { wch: 10 }, { wch: 55 }];
+  }
+
+  // ── Deal Analyzer sheet ──────────────────────────────────────────────────
+  const wd = {};
+  {
+    const analyzerInputs  = project.analyzer || {};
+    const hasAnalyzerData = _n(analyzerInputs.arv) > 0 || _n(analyzerInputs.offerPrice) > 0;
+    const headS  = _s({ bold: true, sz: 11, color: { rgb: 'FFFFFF' } }, 'EA580C', 'left', true);
+    const lblS   = _s({ bold: true, sz: 10, color: { rgb: '374151' } }, 'F9FAFB', 'left',  true);
+    const valS   = _s({ sz: 10, color: { rgb: '111827' } }, 'FFFFFF', 'right');
+    const wdCell = (r, c, v, s, z) => {
+      const a = XLSX.utils.encode_cell({ r, c });
+      wd[a] = { v, t: typeof v === 'number' ? 'n' : 's', s };
+      if (z) wd[a].z = z;
+    };
+
+    let dRow = 0;
+    wdCell(dRow, 0, 'DEAL ANALYZER', headS); wdCell(dRow, 1, '', headS); dRow++;
+
+    if (!hasAnalyzerData) {
+      wdCell(dRow, 0, 'Deal Analyzer not completed', _s({ sz: 10, color: { rgb: '9CA3AF' } }, 'FFFFFF', 'left')); wdCell(dRow, 1, '', valS); dRow++;
+      wdCell(dRow, 0, 'Repair Estimate', lblS); wdCell(dRow, 1, grandTotal, valS, '"$"#,##0'); dRow++;
+    } else {
+      const deal = computeDeal(analyzerInputs, grandTotal);
+      const DA_ROWS = [
+        ['ARV',                   _n(analyzerInputs.arv),          '"$"#,##0'],
+        ['Offer / Purchase Price',_n(analyzerInputs.offerPrice),   '"$"#,##0'],
+        ['Repair Estimate',       grandTotal,                       '"$"#,##0'],
+        ['Closing Costs',         _n(analyzerInputs.closingCosts), '"$"#,##0'],
+        ['Selling Cost %',        _n(analyzerInputs.sellingPct),   '0.00"%"'],
+        ['Selling Costs',         deal.sellingCosts,               '"$"#,##0'],
+        ['Holding Months',        _n(analyzerInputs.holdingMonths),'0'],
+        ['Monthly Holding Cost',  _n(analyzerInputs.monthlyHolding),'"$"#,##0'],
+        ['Holding Costs',         deal.holding,                    '"$"#,##0'],
+        ['Target Profit',         _n(analyzerInputs.targetProfit), '"$"#,##0'],
+        ['Expected Profit',       deal.expectedProfit,             '"$"#,##0'],
+        ['MAO',                   deal.mao,                        '"$"#,##0'],
+      ];
+      for (const [label, value, fmt] of DA_ROWS) {
+        wdCell(dRow, 0, label, lblS); wdCell(dRow, 1, value, valS, fmt); dRow++;
+      }
+      const stColor = deal.status === 'PASS' ? '166534' : deal.status === 'WATCH' ? 'B45309' : 'B91C1C';
+      const stBg    = deal.status === 'PASS' ? 'F0FDF4' : deal.status === 'WATCH' ? 'FFFBEB' : 'FEF2F2';
+      wdCell(dRow, 0, 'Status', _s({ bold: true, sz: 10, color: { rgb: '374151' } }, stBg, 'left', true));
+      wdCell(dRow, 1, deal.status, _s({ bold: true, sz: 11, color: { rgb: stColor } }, stBg, 'center', true)); dRow++;
+    }
+    wd['!ref']  = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: dRow - 1, c: 1 } });
+    wd['!cols'] = [{ wch: 24 }, { wch: 16 }];
+  }
+
+  // ── Review Summary sheet ─────────────────────────────────────────────────
+  const wr = {};
+  {
+    let totalGroups = 0, reviewedGroups = 0, noWorkGroups = 0, selectedItems = 0;
+    const selections = project.selections || {};
+    for (const room of (project.rooms || [])) {
+      const grps = getGroupsForInstance(room.instanceId, room.roomType);
+      for (const grp of grps) {
+        totalGroups++;
+        const st = getEffectiveStatus(room.instanceId, grp.key, project);
+        if (st !== 'unreviewed') reviewedGroups++;
+        if (st === 'none') noWorkGroups++;
+        for (const item of getItemsForGroup(grp.key, project)) {
+          const entry = selections[`${room.instanceId}::${item.id}`];
+          if (entry !== undefined && parseFloat(entry.qty) > 0) selectedItems++;
+        }
+      }
+    }
+    const photoCount   = (photos || []).length;
+    const serialPhotos = (photos || []).filter(p => p.kind === 'serial').length;
+    const exportedAt   = new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+
+    const headS = _s({ bold: true, sz: 11, color: { rgb: 'FFFFFF' } }, 'EA580C', 'left', true);
+    const lblS  = _s({ bold: true, sz: 10, color: { rgb: '374151' } }, 'F9FAFB', 'left', true);
+    const valS  = _s({ sz: 10, color: { rgb: '111827' } }, 'FFFFFF', 'left');
+    const wrCell = (r, c, v, s) => { wr[XLSX.utils.encode_cell({ r, c })] = { v, t: 's', s }; };
+
+    let rRow = 0;
+    wrCell(rRow, 0, 'REVIEW SUMMARY', headS); wrCell(rRow, 1, '', headS); rRow++;
+
+    const RS_ROWS = [
+      ['Groups Reviewed',       `${reviewedGroups} / ${totalGroups}`],
+      ['No Work Groups',        String(noWorkGroups)],
+      ['Items Selected',        String(selectedItems)],
+      ['Critical Warnings',     String(warnings.length)],
+      ['Photo Count',           String(photoCount)],
+      ['Serial Photos',         String(serialPhotos)],
+      ['Grand Repair Estimate', formatMoney(grandTotal)],
+      ['Exported At',           exportedAt],
+    ];
+    for (const [label, value] of RS_ROWS) {
+      wrCell(rRow, 0, label, lblS); wrCell(rRow, 1, value, valS); rRow++;
+    }
+    wr['!ref']  = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rRow - 1, c: 1 } });
+    wr['!cols'] = [{ wch: 22 }, { wch: 22 }];
+  }
+
   // ── Assemble workbook ──────────────────────────────────────────────────────
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Estimate');
   XLSX.utils.book_append_sheet(wb, wm, 'Photo Manifest');
+  XLSX.utils.book_append_sheet(wb, wg, 'Guardrail Warnings');
+  XLSX.utils.book_append_sheet(wb, wd, 'Deal Analyzer');
+  XLSX.utils.book_append_sheet(wb, wr, 'Review Summary');
 
   return wb;
 }

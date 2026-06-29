@@ -97,6 +97,12 @@ let _pendingFocusSelKey = null;
 /** Project id that was last fully rendered — used to reset UI state on switch */
 let _renderedProjectId = null;
 
+/** project.updatedAt of the last render — detects in-place replacements (same id, new data) */
+let _renderedProjectUpdatedAt = null;
+
+/** True when the Web Speech API is available (progressive enhancement only) */
+const _speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
 /** onChange unsubscribe fn — stored so we don't double-subscribe */
 let _unsubscribe = null;
 
@@ -150,7 +156,16 @@ export async function render(rootEl, params) {
     _activeSubTab.clear();
     _expandedGroups.clear();
     _renderedProjectId = project.id;
+    _renderedProjectUpdatedAt = project.updatedAt || null;
     // Load photo cache for the new project (async; re-render when done)
+    _loadPhotoCache(project.id);
+  } else if (project.updatedAt && project.updatedAt !== _renderedProjectUpdatedAt) {
+    // Same project ID but updatedAt changed — happens after a backup Replace.
+    // Revoke stale Object URLs and reload photos from IndexedDB.
+    _renderedProjectUpdatedAt = project.updatedAt;
+    for (const url of _photoURLs) { try { URL.revokeObjectURL(url); } catch (_) {} }
+    _photoURLs = [];
+    _photoCache.clear();
     _loadPhotoCache(project.id);
   }
 
@@ -323,41 +338,50 @@ function _cleanListeners(rootEl) {
    ============================================================ */
 
 function _headerHtml(project, grandTotal, prog, pct) {
-  const itemsLabel = `${prog.itemsDone}/${prog.itemsTotal}`;
+  const itemsLabel  = `${prog.itemsDone}/${prog.itemsTotal}`;
   const groupsLabel = `${prog.groupsDone}/${prog.groupsTotal} groups`;
   return `
-    <header class="app-header wt-header">
+    <div class="wt-brand-row">
+      <img src="./assets/logo.png" alt="" class="wt-brand-logo" aria-hidden="true" />
+      <span class="wt-brand-title">Repair Estimator</span>
+    </div>
+    <div class="wt-nav-row">
       <button class="icon-btn" data-action="wt-back" aria-label="Dashboard" title="Dashboard">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M19 12H5M12 5l-7 7 7 7"/>
         </svg>
       </button>
-
       <button
         class="wt-project-name"
         data-action="wt-rename-project"
         title="Tap to rename project"
         aria-label="Project: ${_esc(project.name)} — tap to rename"
       >${_esc(project.name)}</button>
-
-      <div class="wt-stat-cluster">
-        <span class="total-chip tabular-nums" id="wt-grand-total" aria-live="polite">${formatMoney(grandTotal)}</span>
-        <span class="wt-progress-label" id="wt-progress-label">
-          <span class="wt-progress-main tabular-nums">${itemsLabel}</span>
-          <span class="wt-progress-sub">· ${groupsLabel}</span>
-        </span>
-      </div>
-
-      <div class="app-header__actions">
-        <button class="icon-btn" data-action="wt-goto-pricebook" aria-label="Price Book" title="Price Book">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <div class="wt-nav-actions">
+        <button class="wt-nav-btn" data-action="wt-goto-pricebook" aria-label="Price Book / Rates" title="Price Book / Rates">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2"/>
             <line x1="3" y1="9" x2="21" y2="9"/>
             <line x1="9" y1="21" x2="9" y2="3"/>
           </svg>
+          <span class="wt-nav-btn__label">Rates</span>
+        </button>
+        <button class="wt-nav-btn wt-nav-btn--danger" data-action="wt-reset-project" aria-label="Reset project" title="Reset project">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+          </svg>
+          <span class="wt-nav-btn__label">Reset</span>
         </button>
       </div>
-    </header>
+    </div>
+    <div class="wt-meta-row">
+      <span class="wt-total-big tabular-nums" id="wt-grand-total" aria-live="polite">${formatMoney(grandTotal)}</span>
+      <div class="wt-progress-cluster">
+        <span class="wt-progress-main tabular-nums" id="wt-progress-main">${itemsLabel}</span>
+        <span class="wt-progress-sub" id="wt-progress-sub"> · ${groupsLabel}</span>
+      </div>
+    </div>
     <div class="wt-progress-wrap" id="wt-progress-wrap">
       ${progressBar(pct)}
     </div>
@@ -703,35 +727,39 @@ function _serialSlotHtml(selKey, instanceId, itemId, project) {
       <div class="wt-serial-fields">
         <div class="wt-serial-row">
           <label class="wt-serial-label" for="sf-serial-${_safeId(selKey)}">Serial #</label>
-          <input
-            id="sf-serial-${_safeId(selKey)}"
-            class="input input--sm wt-serial-input"
-            type="text"
-            inputmode="text"
-            autocomplete="off"
-            placeholder="Serial number"
-            value="${_esc(serial)}"
-            data-action="wt-serial-field"
-            data-instance-id="${instanceId}"
-            data-item-id="${itemId}"
-            data-field="serial"
-          />
+          <div class="wt-serial-input-wrap">
+            <input
+              id="sf-serial-${_safeId(selKey)}"
+              class="input input--sm wt-serial-input"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              placeholder="Serial number"
+              value="${_esc(serial)}"
+              data-action="wt-serial-field"
+              data-instance-id="${instanceId}"
+              data-item-id="${itemId}"
+              data-field="serial"
+            />${_speechSupported ? `<button type="button" class="icon-btn wt-dictate-btn" data-action="wt-dictate-field" data-target-id="sf-serial-${_safeId(selKey)}" data-field="serial" data-instance-id="${instanceId}" data-item-id="${itemId}" aria-label="Dictate serial number" title="Dictate serial number" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>` : ''}
+          </div>
         </div>
         <div class="wt-serial-row">
           <label class="wt-serial-label" for="sf-model-${_safeId(selKey)}">Model #</label>
-          <input
-            id="sf-model-${_safeId(selKey)}"
-            class="input input--sm wt-serial-input"
-            type="text"
-            inputmode="text"
-            autocomplete="off"
-            placeholder="Model number"
-            value="${_esc(model)}"
-            data-action="wt-serial-field"
-            data-instance-id="${instanceId}"
-            data-item-id="${itemId}"
-            data-field="model"
-          />
+          <div class="wt-serial-input-wrap">
+            <input
+              id="sf-model-${_safeId(selKey)}"
+              class="input input--sm wt-serial-input"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              placeholder="Model number"
+              value="${_esc(model)}"
+              data-action="wt-serial-field"
+              data-instance-id="${instanceId}"
+              data-item-id="${itemId}"
+              data-field="model"
+            />${_speechSupported ? `<button type="button" class="icon-btn wt-dictate-btn" data-action="wt-dictate-field" data-target-id="sf-model-${_safeId(selKey)}" data-field="model" data-instance-id="${instanceId}" data-item-id="${itemId}" aria-label="Dictate model number" title="Dictate model number" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>` : ''}
+          </div>
         </div>
         <div class="wt-serial-row">
           <label class="wt-serial-label" for="sf-brand-${_safeId(selKey)}">Brand</label>
@@ -782,6 +810,7 @@ function _serialSlotHtml(selKey, instanceId, itemId, project) {
           />
         </div>
       </div>
+      ${!_speechSupported ? `<p class="wt-serial-tip">Tip: Use your keyboard's 🎤 dictation button to enter serial and model numbers hands-free.</p>` : ''}
       <div class="wt-serial-photo-row">
         ${serialPhotoStrip}
         <button
@@ -913,12 +942,7 @@ function _endBarHtml(project) {
 
   return `
     <div class="wt-end-bar">
-      <button
-        class="btn btn--sm wt-reset-btn"
-        data-action="wt-reset-project"
-        aria-label="Reset current project"
-        title="Reset current project"
-      ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:4px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Reset</button>
+      <div class="wt-end-bar__spacer"></div>
       <div class="wt-end-bar__right">
         ${bulkBtn}
         <button
@@ -1007,6 +1031,59 @@ async function _handleWtAction(action, el, e) {
     case 'wt-goto-summary': {
       const pid = el.dataset.projectId || project.id;
       window.location.hash = `#/project/${pid}/summary`;
+      break;
+    }
+
+    /* ------ Speech dictation (Serial # / Model # fields) ------ */
+    case 'wt-dictate-field': {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        toast('Speech input not available. Use your keyboard dictation button.', { type: 'info' });
+        break;
+      }
+      const targetId   = el.dataset.targetId;
+      const field      = el.dataset.field;
+      const iid        = el.dataset.instanceId;
+      const iitemId    = el.dataset.itemId;
+      const inputEl    = document.getElementById(targetId);
+      if (!inputEl) break;
+
+      el.classList.add('is-listening');
+      el.setAttribute('aria-pressed', 'true');
+
+      try {
+        const recognition = new SR();
+        recognition.continuous     = false;
+        recognition.interimResults = false;
+        recognition.lang           = 'en-US';
+
+        recognition.onresult = (evt) => {
+          const text = evt.results[0][0].transcript.trim();
+          if (text) {
+            inputEl.value = text;
+            _suppressRerender = true;
+            setSerialMeta(iid, iitemId, { [field]: text });
+            setTimeout(() => { _suppressRerender = false; }, 100);
+          }
+        };
+        recognition.onerror = (evt) => {
+          el.classList.remove('is-listening');
+          el.setAttribute('aria-pressed', 'false');
+          if (['network', 'service-not-allowed', 'not-allowed'].includes(evt.error)) {
+            toast('Microphone unavailable. Use your keyboard dictation button.', { type: 'info' });
+          }
+        };
+        recognition.onend = () => {
+          el.classList.remove('is-listening');
+          el.setAttribute('aria-pressed', 'false');
+        };
+
+        recognition.start();
+      } catch (_err) {
+        el.classList.remove('is-listening');
+        el.setAttribute('aria-pressed', 'false');
+        toast('Speech input not available here.', { type: 'info' });
+      }
       break;
     }
 

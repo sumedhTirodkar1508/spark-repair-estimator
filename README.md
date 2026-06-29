@@ -1,83 +1,569 @@
-# Spark Estimator
+# Spark Repair Estimator
 
-A mobile-first, offline-capable Progressive Web App (PWA) for Spark Homes acquisition agents to estimate repair costs during distressed-home walkthroughs. Agents walk room-by-room through a structured checklist of 108 line items across five sections (Interior, Kitchen, Bathrooms, Systems, Exterior, plus per-bedroom and per-living-area rooms), capture serial numbers and photos, and export a ZIP containing an Excel workbook (Estimate + Photo Manifest tabs) and all attached photos — all without a network connection after the first load.
+Spark Repair Estimator is a mobile-first, offline-capable Progressive Web App for real-estate acquisition teams to create repair estimates during distressed-home walkthroughs.
 
-## Run locally
+The app lets an agent walk room-by-room through a property, select repair line items, enter quantities, capture photos, record serial/model information manually, review critical-cost warnings, analyze the deal, and export a professional ZIP package containing an Excel workbook and attached photos.
 
-**A local HTTP server is required** — `file://` URLs block service-worker registration and IndexedDB in some browsers. Run:
+It is designed to work in the field, including low-connectivity situations, after the app has been loaded once.
+
+## Live Demo
+
+Deployed app:
+
+```txt
+https://spark-repair-estimator-sumedh.vercel.app/#/dashboard
+```
+
+## Core Features
+
+- Offline-first mobile PWA
+- Installable on Android Chrome and iOS Safari Add to Home Screen
+- Project dashboard with multiple property walkthroughs
+- Room-by-room repair estimate workflow
+- Interior, Kitchen, Bathrooms, Systems, Exterior, Bedrooms, and Living areas
+- Add, rename, duplicate, and remove room instances
+- 108 official repair price-list items
+- Required repair groups plus supplemental groups to avoid hidden/orphan costs
+- No Work Needed toggle for fast inspection flow
+- Bulk No-Work sweep for non-critical unreviewed groups
+- Critical groups protected from silent bulk marking
+- Quantity inputs and quick quantity chips
+- Per-project item price overrides
+- Global Price Book
+- CSV price import/export with row-level warnings
+- Photo capture/upload with IndexedDB blob storage
+- Manual serial/model/brand/year/notes capture for equipment
+- Critical cost guardrails before export
+- Deal Analyzer with ARV, offer price, MAO, expected profit, and PASS/WATCH/FAIL status
+- ZIP export with Excel workbook and photos
+- Backup and restore using ZIP files
+- Import-as-copy support for duplicate project backups
+- No backend, no login, no API calls required
+
+## Tech Stack
+
+- Vanilla HTML, CSS, and JavaScript ES Modules
+- Hash routing with `window.location.hash`
+- IndexedDB for project data and photo blobs
+- localStorage only for tiny local flags
+- Service Worker for offline app-shell caching
+- Web App Manifest for installability
+- Canvas API for image compression and thumbnail generation
+- Vendored JSZip for ZIP generation
+- Vendored xlsx-js-style for Excel workbook generation
+- Static hosting on Vercel
+
+There is no React, Next.js, backend server, database server, Supabase, authentication, or runtime CDN dependency.
+
+## Why This Is a Static PWA
+
+This project is intentionally built as a static offline-first app because the field user may not have reliable connectivity during a property walkthrough.
+
+All data is stored locally in the browser using IndexedDB. The app shell is cached by the service worker, and the export flow works without a backend after the first successful load.
+
+## Run Locally
+
+A local HTTP server is required. Do not open the app with a `file://` URL because service workers and IndexedDB behavior can be blocked or inconsistent.
+
+From the project root:
 
 ```bash
-cd /path/to/spark-repair-estimator
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000` in Chrome (desktop or Android) or Safari (iOS). For PWA install testing use `https://` (GitHub Pages, Netlify, or `npx serve --ssl`).
+Then open:
 
-## Tech stack
-
-- **Vanilla HTML/CSS/ES Modules** — no framework, no build step, no CDN at runtime
-- **IndexedDB** — project data + photo blobs (via `js/db.js`)
-- **Service Worker** — full app-shell precache, cache-first offline strategy
-- **Web App Manifest** — installable on Android (Chrome) and iOS (Safari Add to Home Screen)
-- **Vendored libraries** (offline-safe, no CDN):
-  - `vendor/jszip.min.js` — JSZip 3.10.1 (ZIP export/backup)
-  - `vendor/xlsx.bundle.js` — xlsx-js-style 1.2.0 (Excel workbook)
-- **Canvas API** — photo compression + thumbnail generation
-
-## Storage note
-
-All project data and photo blobs are stored in **IndexedDB** (database `spark-estimator`), not localStorage. localStorage holds only three tiny flags (`spark.activeProjectId`, `spark.dismissedInstallHint`, `spark.lastRoute`). This avoids silent data-loss bugs caused by mobile localStorage quota limits — the reference implementation's `localStorage` approach discards photos when the quota is exceeded.
-
-## Project structure
-
+```txt
+http://localhost:8000
 ```
-index.html              App shell
-styles.css              Hand-rolled mobile-first design system
-manifest.webmanifest    PWA manifest
-service-worker.js       Offline cache (spark-cache-v1)
-app.js                  Boot, hash router, SW registration, install prompt
+
+For realistic mobile/PWA testing, use the deployed HTTPS URL instead of a local Mac IP address.
+
+## Deploying as a Static App on Vercel
+
+This app has no build step.
+
+Recommended Vercel settings:
+
+```txt
+Framework Preset: Other
+Build Command: empty
+Output Directory: .
+Install Command: empty
+Root Directory: .
+```
+
+Vercel simply serves the static files:
+
+```txt
+index.html
+app.js
+styles.css
+manifest.webmanifest
+service-worker.js
 js/
-  catalog.js            108 catalog items, 37 groups, room templates, helpers
-  db.js                 IndexedDB Promise API
-  state.js              Active-project state + mutations
-  pricing.js            Cost resolution, Math.ceil rounding, CSV import/export
-  photos.js             Camera capture, compression, thumbnails
-  guardrails.js         Critical-group warnings
-  dealAnalyzer.js       ARV / MAO deal math
-  export.js             Excel + ZIP export
-  backup.js             Backup ZIP export/import
-  ui/
-    components.js       Modal, bottom-sheet, confirm, toast, progress bar, chips
-    dashboard.js        Project list view
-    walkthrough.js      Room-by-room estimate entry
-    summary.js          Pre-export summary + guardrail warnings
-    priceBook.js        Price admin + CSV import/export
-    analyzer.js         Deal analyzer view
 vendor/
-  jszip.min.js          JSZip 3.10.1 (vendored)
-  xlsx.bundle.js        xlsx-js-style 1.2.0 (vendored)
 assets/
-  logo.png              Spark Group logo
-  icon-192.png          PWA icon 192×192
-  icon-512.png          PWA icon 512×512
-  icon-maskable-512.png PWA maskable icon 512×512
-  apple-touch-icon-180.png  iOS home-screen icon
-  favicon.ico           Browser favicon
 ```
 
-## Routes
+## PWA Install Notes
 
-| Hash | View |
-|------|------|
-| `#/` or `#/dashboard` | Project list |
-| `#/project/:id` | Room walkthrough |
-| `#/project/:id/summary` | Pre-export summary |
-| `#/project/:id/analyzer` | Deal analyzer |
-| `#/pricebook` | Global price book admin |
+### Android Chrome
 
-## PWA install
+Android Chrome may show an install prompt, but it is not guaranteed.
 
-- **Android/Chrome:** Tap the browser install banner or the in-app "Install" button.
-- **iOS/Safari:** Tap Share → Add to Home Screen. (No `beforeinstallprompt` on iOS; the app detects iOS Safari and shows a one-time instruction hint.)
+Manual install:
 
-After install, the app works fully offline (airplane mode) after one successful online load.
+```txt
+Chrome menu ⋮ → Add to Home screen / Install app
+```
+
+### iOS Safari
+
+iOS does not support the Android-style install prompt.
+
+Manual install:
+
+```txt
+Safari → Share → Add to Home Screen
+```
+
+## Offline Testing
+
+For reliable offline testing, use the deployed HTTPS URL.
+
+Recommended test flow:
+
+1. Open the deployed Vercel URL while online.
+2. Wait for the app to fully load.
+3. Install the app or add it to the home screen.
+4. Open the installed app once while online.
+5. Turn on airplane mode.
+6. Reopen the installed app.
+7. Confirm dashboard, project walkthrough, photos, estimates, and export still work.
+
+If old code appears after a deployment, clear the browser’s site data and unregister the old service worker.
+
+## Price Book CSV Format
+
+CSV import expects these columns:
+
+```csv
+id,name,cost,unit
+```
+
+Import rules:
+
+- Items are matched by `id`.
+- Only `cost` is applied.
+- Uploaded `name` and `unit` do not overwrite the catalog.
+- Unknown item IDs are skipped.
+- Invalid or negative costs are skipped.
+- Name/unit mismatches are shown as warnings.
+- Missing known IDs leave current prices unchanged.
+- A preview is shown before changes are applied.
+
+This protects calculation integrity while still allowing price updates.
+
+## Rounding Rule
+
+The app uses a single pricing rule:
+
+```txt
+line total = Math.ceil(quantity × exact resolved unit cost)
+grand total = sum of rounded line totals
+```
+
+Unit costs may contain decimals, but final line totals are rounded up to whole dollars.
+
+## Export Output
+
+The export flow creates a ZIP file containing:
+
+- Excel workbook
+- Estimate sheet
+- Photo Manifest sheet
+- Attached photos in a `photos/` folder
+
+The workbook is generated offline using vendored libraries.
+
+## Backup and Restore
+
+The backup flow exports the complete project state and photos into a ZIP file.
+
+Backup includes:
+
+- project record
+- rooms
+- selected items
+- quantities
+- notes
+- No Work statuses
+- serial/model metadata
+- project price overrides
+- Deal Analyzer inputs
+- photo index
+- photo files
+
+Restore supports:
+
+- Replace existing project
+- Import as copy
+
+Repeated imports use unique names such as:
+
+```txt
+My Project (Copy)
+My Project (Copy 2)
+My Project (Copy 3)
+```
+
+## Storage and Privacy
+
+All project data stays in the browser.
+
+Stored locally:
+
+- project records
+- selections
+- quantities
+- notes
+- photos
+- thumbnails
+- serial metadata
+- price overrides
+- backup/import state
+
+No data is sent to a server by the app.
+
+## Known Limitations
+
+- Data is local to the device unless exported/imported through backup ZIP files.
+- Android install prompts are browser-controlled and may not appear automatically.
+- iOS installation is manual through Safari’s Share menu.
+- Speech input is best handled through the device keyboard’s built-in dictation.
+- OCR is intentionally not included because equipment labels vary widely and offline OCR would add risk and size.
+- Clearing browser site data will remove locally stored projects unless they were backed up first.
+
+## Project Structure
+
+```txt
+index.html
+styles.css
+manifest.webmanifest
+service-worker.js
+app.js
+assets/
+vendor/
+js/
+```
+
+## For Reviewers: File-by-File Architecture
+
+### `index.html`
+
+The static app shell.
+
+It defines:
+
+- root app container
+- modal root
+- bottom-sheet root
+- toast root
+- manifest link
+- iOS PWA meta tags
+- app entry script
+
+### `app.js`
+
+The app boot and routing layer.
+
+It handles:
+
+- service worker registration
+- install prompt handling
+- iOS/Android install hints
+- hash route parsing
+- dashboard route
+- project walkthrough route
+- Price Book route
+- Review & Export route
+- Deal Analyzer route
+- save flushing on page hide
+
+### `styles.css`
+
+The hand-built design system.
+
+It handles:
+
+- dark theme
+- layout
+- cards
+- buttons
+- sticky headers
+- progress bars
+- tabs
+- bottom bars
+- modals
+- sheets
+- mobile responsiveness
+- animations
+- focus states
+- safe-area spacing
+
+### `manifest.webmanifest`
+
+The PWA manifest.
+
+It defines:
+
+- app name
+- short name
+- icons
+- display mode
+- start URL
+- theme color
+- standalone behavior
+
+### `service-worker.js`
+
+The offline app-shell cache.
+
+It precaches:
+
+- HTML
+- CSS
+- JS modules
+- vendor libraries
+- manifest
+- icons/assets
+
+It allows the app to load offline after a successful first load.
+
+### `js/catalog.js`
+
+The repair catalog and grouping model.
+
+It contains:
+
+- 108 official catalog items
+- item IDs
+- item names
+- default costs
+- units
+- required groups
+- supplemental groups
+- room templates
+- critical group metadata
+- serial-required item metadata
+- quantity chip presets
+
+### `js/db.js`
+
+The IndexedDB wrapper.
+
+It manages:
+
+- database open/versioning
+- project records
+- photo records
+- settings
+- photo deletion
+- project deletion
+
+### `js/state.js`
+
+The local state manager.
+
+It handles:
+
+- active project
+- project CRUD
+- room CRUD
+- item selection
+- quantities
+- notes
+- No Work statuses
+- Bulk No-Work
+- project reset
+- serial metadata
+- project price overrides
+- global price overrides
+- custom items
+- debounced persistence
+
+### `js/pricing.js`
+
+The pricing engine.
+
+It handles:
+
+- cost resolution
+- line totals
+- group totals
+- instance totals
+- grand total
+- money formatting
+- unit-cost formatting
+- CSV parsing
+- CSV diffing
+- price import/export
+- price reset
+
+### `js/photos.js`
+
+The photo layer.
+
+It handles:
+
+- camera/file input
+- image compression
+- thumbnail creation
+- photo records
+- photo deletion
+- object URL helpers
+- serial photo counting
+
+### `js/guardrails.js`
+
+The critical-cost warning engine.
+
+It detects:
+
+- unreviewed critical categories
+- selected critical items without quantity
+- missing serial photos
+- missing roof/exterior photos
+
+### `js/dealAnalyzer.js`
+
+The pure deal math module.
+
+It calculates:
+
+- selling costs
+- holding costs
+- expected profit
+- maximum allowable offer
+- PASS / WATCH / FAIL status
+
+### `js/export.js`
+
+The final package export module.
+
+It builds:
+
+- estimate rows
+- photo manifest rows
+- Excel workbook
+- ZIP package
+- photo folder
+- downloadable archive
+
+### `js/backup.js`
+
+The backup/restore module.
+
+It handles:
+
+- backup ZIP export
+- project JSON export
+- photo export
+- backup ZIP parsing
+- replace existing project
+- import as copy
+- unique copy naming
+- thumbnail regeneration on import
+
+### `js/ui/dashboard.js`
+
+The project dashboard.
+
+It handles:
+
+- project list
+- new project
+- open project
+- rename project
+- delete project
+- import backup
+
+### `js/ui/walkthrough.js`
+
+The main field workflow screen.
+
+It handles:
+
+- section tabs
+- room tabs
+- group cards
+- item rows
+- No Work toggle
+- Bulk No-Work
+- quantity inputs
+- quantity chips
+- notes
+- photos
+- serial fields
+- running total
+- progress
+- project reset
+- Review navigation
+
+### `js/ui/priceBook.js`
+
+The Price Book admin screen.
+
+It handles:
+
+- global price search
+- edit price
+- reset price
+- reset all prices
+- import CSV
+- export CSV
+- warning preview
+- diff preview
+
+### `js/ui/summary.js`
+
+The Review & Export screen.
+
+It handles:
+
+- critical warnings
+- estimate breakdown
+- export ZIP
+- backup export
+- backup restore
+- Deal Analyzer link
+
+### `js/ui/analyzer.js`
+
+The Deal Analyzer UI.
+
+It handles:
+
+- ARV input
+- offer price
+- closing costs
+- selling percentage
+- holding costs
+- target profit
+- live results
+- neutral empty state before required inputs are entered
+
+### `js/ui/components.js`
+
+Shared UI utilities.
+
+It provides:
+
+- modal
+- confirm dialog
+- bottom sheet
+- toast
+- progress bar
+- quantity chips
+- shared formatting helpers

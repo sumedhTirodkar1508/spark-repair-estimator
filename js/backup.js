@@ -101,15 +101,16 @@ function _stampStr() {
 /**
  * Produce a unique display name for an imported copy, e.g.
  * "123 Main St (Copy)", "123 Main St (Copy 2)", "123 Main St (Copy 3)".
+ * Comparison against existing names is case-insensitive and trimmed.
  * @param {string} baseName  the original project name
- * @param {Set<string>} existing  set of names already in use
+ * @param {Set<string>} existingLower  set of existing names, already trimmed + lower-cased
  * @returns {string}
  */
-function _uniqueCopyName(baseName, existing) {
+function _uniqueCopyName(baseName, existingLower) {
   const root = String(baseName || 'Imported Project').replace(/\s*\(Copy(?:\s+\d+)?\)\s*$/i, '').trim() || 'Imported Project';
   let candidate = `${root} (Copy)`;
   let n = 2;
-  while (existing.has(candidate)) {
+  while (existingLower.has(candidate.trim().toLowerCase())) {
     candidate = `${root} (Copy ${n})`;
     n++;
   }
@@ -269,56 +270,91 @@ export async function readBackupZip(file) {
 /**
  * Import a parsed backup into IndexedDB.
  *
- * mode 'replace':
- *   - Keep the same project.id.
- *   - Overwrite the existing project record.
- *   - Re-generate thumbBlob for each photo via makeThumbnail; putPhoto with
- *     same ids and projectId.
+ * Accepts either a legacy string mode or an options object:
  *
- * mode 'copy':
- *   - Assign a new project id: `proj_<timestamp>`.
- *   - Remap project.id.
- *   - For each photo: new id `ph_<timestamp>_<index>`, set projectId to new id.
- *   - Re-generate thumbBlob; putPhoto.
+ *   'copy'  | { mode: 'copy' }
+ *     - Assign a new project id: `proj_<timestamp>`.
+ *     - Give it a unique display name ("(Copy)", "(Copy 2)", …),
+ *       compared case-insensitively against existing names.
+ *     - Generate fresh photo ids; set projectId to the new id.
+ *
+ *   'replace' | { mode: 'replace-existing-id' }
+ *     - Keep the backup's own project.id (the target IS that project).
+ *     - Overwrite the existing project record.
+ *     - Delete the target's existing photos, then re-write the backup's
+ *       photos with their original ids and the same projectId.
+ *
+ *   { mode: 'replace-current', targetProjectId }
+ *     - Replace the CURRENTLY ACTIVE project (id = targetProjectId), NOT a new
+ *       project and NOT the backup's old id. The route stays valid.
+ *     - The backup's name/selections/rooms/serials/analyzer/etc. are copied
+ *       onto the target id.
+ *     - Delete the target's existing photos, then write the backup's photos
+ *       with FRESH ids (so they cannot collide with / steal photos belonging
+ *       to other projects whose ids differ from the backup's).
  *
  * @param {{ meta:object, project:object, photos:Array<{record:object,blob:Blob}> }} parsed
- * @param {'replace'|'copy'} mode
+ * @param {'replace'|'copy'|{mode:string, targetProjectId?:string}} modeOrOpts
  * @returns {Promise<string>}  the resulting projectId
  */
-export async function importBackup(parsed, mode) {
+export async function importBackup(parsed, modeOrOpts) {
   const { project, photos } = parsed;
+
+  // Normalise legacy string mode + new options object.
+  const opts = (typeof modeOrOpts === 'string') ? { mode: modeOrOpts } : (modeOrOpts || {});
+  let mode = opts.mode || 'copy';
+  if (mode === 'replace') mode = 'replace-existing-id'; // legacy alias
+
+  const nowIso = new Date().toISOString();
 
   let targetProjectId;
   let targetProject;
+  let regenPhotoIds;          // true → assign fresh photo ids
+  let purgeTargetPhotos;      // true → deletePhotosByProject(targetProjectId) first
 
-  if (mode === 'replace') {
-    // Keep the existing id; overwrite everything else
-    targetProjectId = project.id;
-    targetProject   = {
-      ...project,
-      id:        targetProjectId,
-      updatedAt: new Date().toISOString(),
-    };
-  } else {
-    // mode === 'copy' — new unique id AND a unique display name so repeated
-    // imports produce "(Copy)", "(Copy 2)", "(Copy 3)" instead of duplicates.
-    const existing = new Set((await getAllProjects()).map(p => p.name));
+  if (mode === 'copy') {
+    const existingLower = new Set(
+      (await getAllProjects()).map(p => String(p.name || '').trim().toLowerCase())
+    );
     targetProjectId = `proj_${Date.now()}`;
     targetProject   = {
       ...project,
       id:        targetProjectId,
-      name:      _uniqueCopyName(project.name, existing),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      name:      _uniqueCopyName(project.name, existingLower),
+      createdAt: nowIso,
+      updatedAt: nowIso,
     };
+    regenPhotoIds     = true;
+    purgeTargetPhotos = false;
+  } else if (mode === 'replace-current') {
+    targetProjectId = opts.targetProjectId;
+    if (!targetProjectId) {
+      throw new Error('importBackup: mode "replace-current" requires targetProjectId');
+    }
+    targetProject = {
+      ...project,
+      id:        targetProjectId,
+      updatedAt: nowIso,
+    };
+    regenPhotoIds     = true;  // backup photo ids belong to a different project id
+    purgeTargetPhotos = true;
+  } else { // 'replace-existing-id'
+    targetProjectId = project.id;
+    targetProject   = {
+      ...project,
+      id:        targetProjectId,
+      updatedAt: nowIso,
+    };
+    regenPhotoIds     = false; // target IS this project — keep original photo ids
+    purgeTargetPhotos = true;
   }
 
   // Persist the project record
   await putProject(targetProject);
 
-  // In replace mode, purge stale photos before writing restored ones so the
-  // old blobs cannot appear in the Photo Manifest or export ZIP.
-  if (mode === 'replace') {
+  // Purge stale photos for the target before writing restored ones so old blobs
+  // cannot linger in the Photo Manifest or export ZIP.
+  if (purgeTargetPhotos) {
     await deletePhotosByProject(targetProjectId);
   }
 
@@ -327,12 +363,7 @@ export async function importBackup(parsed, mode) {
   for (let i = 0; i < photos.length; i++) {
     const { record, blob } = photos[i];
 
-    let photoId;
-    if (mode === 'replace') {
-      photoId = record.id;
-    } else {
-      photoId = `ph_${ts}_${i}`;
-    }
+    const photoId = regenPhotoIds ? `ph_${ts}_${i}` : record.id;
 
     // Generate thumbnail from the full-res blob
     let thumbBlob;

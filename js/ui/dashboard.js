@@ -7,26 +7,32 @@
  */
 
 import {
-  listProjects,
+  listProjectsWithTotals,
   createProject,
   renameProject,
   deleteProject,
   getActiveProject,
-} from '../state.js';
+} from "../state.js";
 
-import { computeGrandTotal, formatMoney } from '../pricing.js';
-import { showModal, showSheet, confirm, toast } from './components.js';
-import { readBackupZip, importBackup } from '../backup.js';
+import { formatMoney } from "../pricing.js";
+import { showModal, showSheet, confirm, toast } from "./components.js";
+import { readBackupZip, importBackup } from "../backup.js";
 
 /* ------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------ */
 
 function _fmtDate(iso) {
-  if (!iso) return '';
+  if (!iso) return "";
   try {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch (_) { return ''; }
+    return new Date(iso).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch (_) {
+    return "";
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -37,7 +43,7 @@ export async function render(rootEl, params) {
   rootEl.innerHTML = `
     <header class="app-header">
       <img src="./assets/logo.png" alt="Spark" class="app-header__logo" />
-      <span class="app-header__title">Spark Repair Estimator</span>
+      <span class="app-header__title">Repair Estimator</span>
     </header>
     <div class="page-content">
       <div class="loading-state" style="min-height:40dvh">
@@ -48,12 +54,12 @@ export async function render(rootEl, params) {
 
   let projects;
   try {
-    projects = await listProjects();
+    projects = await listProjectsWithTotals();
   } catch (err) {
     rootEl.innerHTML = `
       <header class="app-header">
         <img src="./assets/logo.png" alt="Spark" class="app-header__logo" />
-        <span class="app-header__title">Spark Repair Estimator</span>
+        <span class="app-header__title">Repair Estimator</span>
       </header>
       <div class="page-content">
         <div class="empty-state">
@@ -72,9 +78,10 @@ export async function render(rootEl, params) {
 function _renderDashboard(rootEl, projects) {
   const active = getActiveProject();
 
-  const projectRows = projects.length > 0
-    ? projects.map(p => _projectRowHtml(p, active)).join('')
-    : `<div class="empty-state" style="min-height:30dvh">
+  const projectRows =
+    projects.length > 0
+      ? projects.map((p) => _projectRowHtml(p, active)).join("")
+      : `<div class="empty-state" style="min-height:30dvh">
          <div class="empty-state__icon">🏠</div>
          <p class="empty-state__title">No projects yet</p>
          <p class="empty-state__desc">Tap "+ New Project" to start your first walkthrough estimate.</p>
@@ -83,7 +90,7 @@ function _renderDashboard(rootEl, projects) {
   rootEl.innerHTML = `
     <header class="app-header">
       <img src="./assets/logo.png" alt="Spark" class="app-header__logo" />
-      <span class="app-header__title">Spark Repair Estimator</span>
+      <span class="app-header__title">Repair Estimator</span>
     </header>
 
     <div class="page-content" style="padding-top:var(--sp-6)">
@@ -115,24 +122,32 @@ function _renderDashboard(rootEl, projects) {
     </div>
   `;
 
-  /* ---- delegated handlers inside this view (named fns = idempotent) ---- */
-  rootEl.addEventListener('click', _dashClickHandler, { once: false });
-  rootEl.addEventListener('change', _dashChangeHandler, { once: false });
+  /* ---- delegated handlers — attached once per rootEl lifetime ---- */
+  if (!rootEl.dataset.dashHandlerAttached) {
+    rootEl.dataset.dashHandlerAttached = "1";
+    rootEl.addEventListener("click", _dashClickHandler);
+    rootEl.addEventListener("change", _dashChangeHandler);
+  }
 }
 
 function _projectRowHtml(p, active) {
-  // We don't have globalPrices here — just show last-updated date.
-  // Grand total requires loading the full project; that's too heavy for a list.
-  const isActive = active && active.id === p.id;
+  const isActive  = active && active.id === p.id;
+  const total     = typeof p.total === "number" ? p.total : 0;
+  const selCount  = typeof p.selectedCount === "number" ? p.selectedCount : 0;
   return `
     <div class="list-item dash-project-row" data-project-id="${p.id}" style="cursor:pointer;gap:var(--sp-3)">
       <div style="flex:1;min-width:0">
         <div style="font-weight:var(--weight-semibold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
           ${_esc(p.name)}
-          ${isActive ? '<span class="badge badge--work" style="margin-left:var(--sp-2)">Open</span>' : ''}
+          ${isActive ? '<span class="badge badge--work" style="margin-left:var(--sp-2)">Open</span>' : ""}
         </div>
         <div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:2px">
           Updated ${_fmtDate(p.updatedAt)}
+        </div>
+        <div class="dash-estimate">
+          <span class="dash-estimate__label">Repair Estimate:</span>
+          <span class="dash-estimate__value tabular-nums">${formatMoney(total)}</span>
+          ${selCount > 0 ? `<span class="dash-estimate__count">${selCount} item${selCount !== 1 ? "s" : ""}</span>` : ""}
         </div>
       </div>
       <div style="display:flex;gap:var(--sp-2);flex-shrink:0">
@@ -168,7 +183,10 @@ async function _dashClickHandler(e) {
       return;
     }
     // Tapping the project row itself (not a button) → open it
-    if (el.classList.contains('dash-project-row') && !e.target.closest('[data-action]')) {
+    if (
+      el.classList.contains("dash-project-row") &&
+      !e.target.closest("[data-action]")
+    ) {
       const pid = el.dataset.projectId;
       if (pid) {
         await _openProject(pid);
@@ -182,9 +200,13 @@ async function _dashClickHandler(e) {
 /* Handle the Import Backup file selection (change event on the hidden input). */
 function _dashChangeHandler(e) {
   const input = e.target;
-  if (input && input.classList && input.classList.contains('dash-import-input')) {
+  if (
+    input &&
+    input.classList &&
+    input.classList.contains("dash-import-input")
+  ) {
     const file = input.files && input.files[0];
-    input.value = ''; // allow re-selecting the same file later
+    input.value = ""; // allow re-selecting the same file later
     if (file) _handleImportBackup(file);
   }
 }
@@ -194,70 +216,79 @@ async function _handleImportBackup(file) {
   try {
     parsed = await readBackupZip(file);
   } catch (err) {
-    toast('Invalid backup: ' + (err.message || err), { type: 'error' });
+    toast("Invalid backup: " + (err.message || err), { type: "error" });
     return;
   }
   try {
-    const newId = await importBackup(parsed, 'copy');
-    toast('Backup imported', { type: 'success' });
+    const newId = await importBackup(parsed, "copy");
+    toast("Backup imported", { type: "success" });
     // Navigate only — walkthrough.render() switches the active project after the
     // route changes, avoiding the dashboard-clobber race documented in _openProject.
-    window.location.hash = '#/project/' + newId;
+    window.location.hash = "#/project/" + newId;
   } catch (err) {
-    toast('Import failed: ' + (err.message || err), { type: 'error' });
+    toast("Import failed: " + (err.message || err), { type: "error" });
   }
 }
 
 async function _handleDashAction(action, el) {
-  if (action === 'dash-new-project') {
-    const name = await showModal({ title: 'New Project', placeholder: '123 Main St', confirmText: 'Create' });
+  if (action === "dash-new-project") {
+    const name = await showModal({
+      title: "New Project",
+      placeholder: "123 Main St",
+      confirmText: "Create",
+    });
     if (!name) return;
     try {
       const proj = await createProject(name);
       // Navigate into it
-      window.location.hash = '#/project/' + proj.id;
+      window.location.hash = "#/project/" + proj.id;
     } catch (err) {
-      toast('Could not create project: ' + err.message, { type: 'error' });
+      toast("Could not create project: " + err.message, { type: "error" });
     }
     return;
   }
 
-  if (action === 'dash-rename-project') {
-    const id   = el.dataset.projectId;
-    const name = el.dataset.projectName || '';
-    const newName = await showModal({ title: 'Rename Project', placeholder: name, value: name, confirmText: 'Rename' });
+  if (action === "dash-rename-project") {
+    const id = el.dataset.projectId;
+    const name = el.dataset.projectName || "";
+    const newName = await showModal({
+      title: "Rename Project",
+      placeholder: name,
+      value: name,
+      confirmText: "Rename",
+    });
     if (!newName) return;
     try {
       await renameProject(id, newName);
-      toast('Renamed to "' + newName + '"', { type: 'success' });
+      toast('Renamed to "' + newName + '"', { type: "success" });
       // Re-fetch and re-render
-      const projects = await listProjects();
-      const rootEl = document.getElementById('app');
+      const projects = await listProjectsWithTotals();
+      const rootEl = document.getElementById("app");
       if (rootEl) _renderDashboard(rootEl, projects);
     } catch (err) {
-      toast('Could not rename: ' + err.message, { type: 'error' });
+      toast("Could not rename: " + err.message, { type: "error" });
     }
     return;
   }
 
-  if (action === 'dash-delete-project') {
-    const id   = el.dataset.projectId;
-    const name = el.dataset.projectName || 'this project';
+  if (action === "dash-delete-project") {
+    const id = el.dataset.projectId;
+    const name = el.dataset.projectName || "this project";
     const ok = await confirm({
-      title: 'Delete Project',
+      title: "Delete Project",
       message: `Delete "${name}" and all its photos? This cannot be undone.`,
-      confirmText: 'Delete',
+      confirmText: "Delete",
       danger: true,
     });
     if (!ok) return;
     try {
       await deleteProject(id);
-      toast('Project deleted', { type: 'info' });
-      const projects = await listProjects();
-      const rootEl = document.getElementById('app');
+      toast("Project deleted", { type: "info" });
+      const projects = await listProjectsWithTotals();
+      const rootEl = document.getElementById("app");
       if (rootEl) _renderDashboard(rootEl, projects);
     } catch (err) {
-      toast('Could not delete: ' + err.message, { type: 'error' });
+      toast("Could not delete: " + err.message, { type: "error" });
     }
     return;
   }
@@ -272,12 +303,15 @@ async function _openProject(pid) {
   // Instead, just navigate; walkthrough.render() switches the active project
   // AFTER handleRoute has set the route name to "project", so any emit during
   // the switch no longer re-renders the dashboard.
-  window.location.hash = '#/project/' + pid;
+  window.location.hash = "#/project/" + pid;
 }
 
 /* HTML escape */
 function _esc(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
