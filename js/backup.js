@@ -16,7 +16,7 @@
  * creating a transient anchor for download.
  */
 
-import { getProject, getAllProjects, putProject, putPhoto, getPhotosByProject } from './db.js';
+import { getProject, getAllProjects, putProject, putPhoto, getPhotosByProject, deletePhotosByProject } from './db.js';
 import { makeThumbnail } from './photos.js';
 
 // ============================================================================
@@ -315,6 +315,12 @@ export async function importBackup(parsed, mode) {
 
   // Persist the project record
   await putProject(targetProject);
+
+  // In replace mode, purge stale photos before writing restored ones so the
+  // old blobs cannot appear in the Photo Manifest or export ZIP.
+  if (mode === 'replace') {
+    await deletePhotosByProject(targetProjectId);
+  }
 
   // Re-generate thumbnails and persist each photo
   const ts = Date.now();

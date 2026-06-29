@@ -16,7 +16,7 @@ import {
 
 import { computeGrandTotal, formatMoney } from '../pricing.js';
 import { showModal, showSheet, confirm, toast } from './components.js';
-import { readBackupZip, importBackup, projectIdExists } from '../backup.js';
+import { readBackupZip, importBackup } from '../backup.js';
 
 /* ------------------------------------------------------------------
  * Helpers
@@ -198,20 +198,7 @@ async function _handleImportBackup(file) {
     return;
   }
   try {
-    let mode = 'copy';
-    if (await projectIdExists(parsed.project.id)) {
-      const choice = await showSheet({
-        title: 'Project Already Exists',
-        html: `<p style="margin:0 0 var(--sp-2)">A project from this backup already exists on this device. Import it as a separate copy, or replace the existing one?</p>`,
-        actions: [
-          { label: 'Import as Copy', value: 'copy', primary: true },
-          { label: 'Replace Existing', value: 'replace', danger: true },
-        ],
-      });
-      if (!choice) return; // cancelled
-      mode = choice;
-    }
-    const newId = await importBackup(parsed, mode);
+    const newId = await importBackup(parsed, 'copy');
     toast('Backup imported', { type: 'success' });
     // Navigate only — walkthrough.render() switches the active project after the
     // route changes, avoiding the dashboard-clobber race documented in _openProject.

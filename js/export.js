@@ -131,6 +131,12 @@ function _safe(str) {
     .replace(/^_+|_+$/g, '') || 'x';
 }
 
+function _stampStr() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
 /**
  * Build a deduped, safe, unique filename for each photo record.
  * The SAME string is used in the manifest `filename` column AND the zip entry path.
@@ -684,9 +690,9 @@ export async function exportProjectZip(project, globalPrices) {
 
   // Safe project name for the archive filename
   const safeProject = _safe(project.name || 'project') || 'project';
-  const dateStr     = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const xlsxName    = `${safeProject}-Estimate-${dateStr}.xlsx`;
-  const zipName     = `${safeProject}-Estimate-${dateStr}.zip`;
+  const stamp       = _stampStr(); // YYYYMMDD-HHMMSS local time
+  const xlsxName    = `${safeProject}-estimate-${stamp}.xlsx`;
+  const zipName     = `${safeProject}-estimate-${stamp}.zip`;
 
   zip.file(xlsxName, xlsxData);
 
