@@ -521,7 +521,12 @@ async function _doRestore(file) {
       // Replace the CURRENT project record in place (keeps the same id so the
       // route stays valid), then reload the active project WITHOUT flushing the
       // stale in-memory copy back over the freshly-restored record.
-      await backup.importBackup(parsed, { mode: 'replace-current', targetProjectId: current.id });
+      await backup.importBackup(parsed, {
+        mode: 'replace-current',
+        targetProjectId: current.id,
+        targetProjectName: current.name,
+        targetProjectCreatedAt: current.createdAt,
+      });
       await reloadActiveProject(current.id);
       window.location.hash = `#/project/${current.id}`;
       toast('Backup restored into current project.', { type: 'success' });

@@ -117,6 +117,28 @@ function _uniqueCopyName(baseName, existingLower) {
   return candidate;
 }
 
+/**
+ * Make a preserved name unique for replace-current. Uses the name as-is when
+ * it does not collide with OTHER projects; otherwise suffixes "(Restored)",
+ * "(Restored 2)", … (never "(Copy)" — this is not Import as Copy).
+ * Comparison is case-insensitive and trimmed.
+ * @param {string} baseName       the current project's existing name to keep
+ * @param {Set<string>} existingLower  other projects' names (trimmed + lower-cased),
+ *                                      EXCLUDING the target project itself
+ * @returns {string}
+ */
+function _uniqueRestoredName(baseName, existingLower) {
+  const root = String(baseName || 'Restored Project').replace(/\s*\(Restored(?:\s+\d+)?\)\s*$/i, '').trim() || 'Restored Project';
+  if (!existingLower.has(root.toLowerCase())) return root;
+  let candidate = `${root} (Restored)`;
+  let n = 2;
+  while (existingLower.has(candidate.trim().toLowerCase())) {
+    candidate = `${root} (Restored ${n})`;
+    n++;
+  }
+  return candidate;
+}
+
 // ============================================================================
 // exportBackupZip
 // ============================================================================
@@ -331,9 +353,23 @@ export async function importBackup(parsed, modeOrOpts) {
     if (!targetProjectId) {
       throw new Error('importBackup: mode "replace-current" requires targetProjectId');
     }
+    // Preserve the current project's identity: keep its existing NAME (not the
+    // backup's) and createdAt by default. Only fall back to the backup name if
+    // no target name was supplied. Make the kept name unique against OTHER
+    // projects (excluding this target id) so we never create duplicates.
+    const keepName = (typeof opts.targetProjectName === 'string' && opts.targetProjectName.trim())
+      ? opts.targetProjectName
+      : project.name;
+    const otherNamesLower = new Set(
+      (await getAllProjects())
+        .filter(p => p.id !== targetProjectId)
+        .map(p => String(p.name || '').trim().toLowerCase())
+    );
     targetProject = {
       ...project,
       id:        targetProjectId,
+      name:      _uniqueRestoredName(keepName, otherNamesLower),
+      createdAt: opts.targetProjectCreatedAt || project.createdAt,
       updatedAt: nowIso,
     };
     regenPhotoIds     = true;  // backup photo ids belong to a different project id
