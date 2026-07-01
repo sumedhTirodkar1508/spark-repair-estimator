@@ -275,7 +275,7 @@ function _renderWalkthrough(rootEl, project) {
   const globalPrices = getGlobalPrices();
   const grandTotal   = computeGrandTotal(project, globalPrices);
   const prog = _calcProgress(project);
-  const pct = prog.itemsTotal > 0 ? Math.round((prog.itemsDone / prog.itemsTotal) * 100) : 0;
+  const pct = prog.groupsTotal > 0 ? Math.round((prog.groupsDone / prog.groupsTotal) * 100) : 0;
 
   const section = SECTIONS.find(s => s.id === _activeSectionId) || SECTIONS[0];
   _activeSectionId = section.id; // normalise
@@ -338,8 +338,8 @@ function _cleanListeners(rootEl) {
    ============================================================ */
 
 function _headerHtml(project, grandTotal, prog, pct) {
-  const itemsLabel  = `${prog.itemsDone}/${prog.itemsTotal}`;
   const groupsLabel = `${prog.groupsDone}/${prog.groupsTotal} groups`;
+  const itemsLabel  = `${prog.selectedItems} work item${prog.selectedItems !== 1 ? 's' : ''}`;
   return `
     <div class="wt-brand-row">
       <img src="./assets/logo.png" alt="" class="wt-brand-logo" aria-hidden="true" />
@@ -378,8 +378,8 @@ function _headerHtml(project, grandTotal, prog, pct) {
     <div class="wt-meta-row">
       <span class="wt-total-big tabular-nums" id="wt-grand-total" aria-live="polite">${formatMoney(grandTotal)}</span>
       <div class="wt-progress-cluster">
-        <span class="wt-progress-main tabular-nums" id="wt-progress-main">${itemsLabel}</span>
-        <span class="wt-progress-sub" id="wt-progress-sub"> · ${groupsLabel}</span>
+        <span class="wt-progress-main tabular-nums" id="wt-progress-main">${groupsLabel}</span>
+        <span class="wt-progress-sub" id="wt-progress-sub"> · ${itemsLabel}</span>
       </div>
     </div>
     <div class="wt-progress-wrap" id="wt-progress-wrap">
@@ -1572,11 +1572,9 @@ function _fullRerender() {
    ============================================================ */
 
 function _calcProgress(project) {
-  // Item-level reviewed progress (main) + group-level progress (secondary).
-  // An item counts as reviewed when it is selected OR it lives in a group
-  // instance marked "No Work Needed" (all visible items there count as no-work).
-  // Unselected items in work/unreviewed groups are unreviewed.
-  let itemsDone = 0, itemsTotal = 0;
+  // Progress is group-based: any selected item OR explicit No Work completes
+  // the group. Selected item count is kept only as secondary context.
+  let selectedItems = 0;
   let groupsDone = 0, groupsTotal = 0;
   for (const room of project.rooms) {
     const groups = getGroupsForInstance(room.instanceId, room.roomType);
@@ -1585,18 +1583,12 @@ function _calcProgress(project) {
       const status = getEffectiveStatus(room.instanceId, g.key, project);
       if (status !== 'unreviewed') groupsDone++;
       const items = getItemsForGroup(g.key, project);
-      const noneGroup = status === 'none';
       for (const item of items) {
-        itemsTotal++;
-        if (noneGroup) {
-          itemsDone++; // covered by No Work Needed
-        } else if (project.selections[`${room.instanceId}::${item.id}`] !== undefined) {
-          itemsDone++; // selected work item
-        }
+        if (project.selections[`${room.instanceId}::${item.id}`] !== undefined) selectedItems++;
       }
     }
   }
-  return { itemsDone, itemsTotal, groupsDone, groupsTotal };
+  return { selectedItems, groupsDone, groupsTotal };
 }
 
 /* ============================================================

@@ -1,102 +1,37 @@
-# Spark Repair Estimator — Submission Writeup
+# Spark Repair Estimator — One-Page Submission Writeup
 
-## Overview
+## 1. Most interesting design / UX decision
 
-Spark Repair Estimator is a mobile-first offline Progressive Web App built for Spark Homes acquisition agents performing distressed-home walkthroughs. The app helps an agent move through a property room-by-room, select repair items, enter quantities, capture photos, record serial/model details, review critical warnings, analyze deal viability, and export a professional ZIP package containing an Excel workbook and supporting photos.
+The main UX decision was to treat the estimator as a guided field walkthrough instead of a generic repair calculator. Acquisition agents need to move quickly through distressed homes, often on a phone, while avoiding missed high-cost categories. I structured the app around room/section groups, group-level progress, No Work decisions, critical-category warnings, and a Review & Export step before generating the final package.
 
-The main design goal was to make the tool practical in the field: fast on mobile, usable with poor connectivity, and structured enough to prevent expensive categories such as HVAC, electrical, roof, plumbing, water heater, windows, and structural work from being missed.
+The most important tradeoff was using warning-based guardrails instead of hard blocking. The app clearly flags unreviewed critical areas such as HVAC, electrical, roof, plumbing, water heater, windows, and structural work, but it still allows export when an agent needs to move fast in the field. That keeps the workflow practical while making expensive omissions visible.
 
-## Technical Approach
+## 2. What is broken or fragile
 
-The application is intentionally built as a static offline-first PWA using vanilla HTML, CSS, and JavaScript ES modules. There is no backend, login, API, database server, or runtime CDN dependency.
+The biggest limitation is that all data is local to the browser/device. This is intentional for an offline-first static PWA, but it means users must export backups if they want recovery or transfer across devices. Clearing browser site data will delete local projects unless they have been backed up.
 
-Key technical decisions:
+PWA installation is also browser-controlled. Android and iOS handle install prompts differently, and iOS requires Safari’s Share → Add to Home Screen flow. The app works offline after the first successful load, but the user must load the app online once so the service worker can cache the app shell.
 
-- Static PWA hosted on Vercel
-- Hash-based client-side routing
-- IndexedDB for project data and photo blobs
-- Service Worker app-shell caching for offline use
-- Web App Manifest for Android/iOS installation
-- Local vendored JSZip and xlsx-js-style libraries for offline ZIP/Excel generation
-- Canvas-based photo compression and thumbnail generation
-- localStorage only for tiny local flags such as active project and install-hint dismissal
+OCR is intentionally not included. Equipment labels vary heavily in lighting, angle, dirt, glare, and model format. Offline OCR would add size, complexity, and accuracy risk. Instead, I prioritized reliable manual serial/model/brand/year capture with proof photos and optional device/browser speech input where supported.
 
-This structure allows the app to load and continue working offline after the first successful online load.
+## 3. Creative addition and why I chose it
 
-## Core Workflow
+My creative addition was turning the estimator into a complete field package workflow: Price Book, critical guardrails, Deal Analyzer, photo manifest, and backup/restore.
 
-1. Agent opens or creates a project from the dashboard.
-2. Agent walks the property through structured sections: Interior, Kitchen, Bathrooms, Systems, Exterior, Bedrooms, and Living.
-3. Agent selects repair line items, enters quantities, adds notes, and attaches photos.
-4. Agent marks reviewed groups as No Work Needed when appropriate.
-5. Non-critical unreviewed groups can be bulk-marked as No Work, while critical groups remain protected.
-6. Equipment-related items support manual serial/model/brand/year notes and serial photos.
-7. Review & Export shows critical warnings, repair breakdown, review completeness, export, backup/restore, and Deal Analyzer access.
-8. The final export creates a ZIP containing an Excel workbook and all attached photos.
+The Deal Analyzer connects repair scope to acquisition decision-making. It uses ARV, offer price, selling/holding costs, target profit, and repair estimate to produce expected profit, maximum allowable offer, and PASS/WATCH/FAIL status. This makes the tool useful beyond cost entry: it helps the user decide whether the property still works as a deal.
 
-## Features Implemented
+The export package also includes more than a basic estimate. The ZIP contains an Excel workbook with Estimate, Photo Manifest, Guardrail Warnings, Deal Analyzer, and Review Summary sheets, plus attached photos. This makes the output easier to review, share, and defend after the walkthrough.
 
-- Mobile-first offline PWA
-- Project dashboard with repair estimate glimpses
-- Multiple project support
-- Add, rename, duplicate, and remove room instances
-- 108 official repair price-list items
-- Required repair categories plus supplemental grouping to avoid orphan items
-- No Work Needed workflow
-- Bulk No-Work sweep for non-critical groups
-- Critical group protection
-- Live repair total and progress tracking
-- Quantity chips and manual quantity entry
-- Project-specific price overrides
-- Global Price Book
-- CSV price import/export with preview and row-level warnings
-- Photo capture/upload with local IndexedDB storage
-- Manual serial/model/brand/year/notes capture
-- Progressive speech input for serial/model fields when the browser supports it
-- Critical Cost Guardrails
-- Deal Analyzer with ARV, offer price, MAO, expected profit, and PASS/WATCH/FAIL status
-- ZIP export with Excel workbook and photos
-- Excel workbook sheets: Estimate, Photo Manifest, Guardrail Warnings, Deal Analyzer, Review Summary
-- Backup and restore with Replace Current Project and Import as Copy flows
+## 4. What I would ship next with two more days
 
-## Notable Design Choices
+With two more days, I would add authenticated team accounts with cloud sync while keeping the offline-first field workflow. Agents would be able to sign in, create property walkthroughs under their account or team, collect repairs/photos/serial details offline on-site, and then automatically sync the project back to a database once internet access returns.
 
-IndexedDB is used instead of localStorage for project records and photos because mobile browser localStorage is not suitable for larger binary/photo data. This keeps the app more reliable during real field use.
+The key design would be offline-first sync rather than making the app depend on the network. IndexedDB would remain the local source of truth during the walkthrough, while the backend would handle cross-device access, team visibility, backup recovery, and audit/history for completed estimates. This would let an acquisition team start an estimate on a phone, review it later on desktop, and avoid losing work if a device is cleared or replaced.
 
-OCR was intentionally not included. Equipment labels vary heavily, and offline OCR would add size, risk, and accuracy problems. Instead, the app provides manual serial/model fields, optional browser speech input when supported, and native keyboard dictation compatibility.
+After that, I would add a Portfolio Compare view for reviewing multiple properties side by side: repair total, group completion, photo count, critical warning count, deal status, expected profit, and last updated time. That would help the team prioritize which properties deserve follow-up.
 
-The app uses warning-based guardrails rather than hard export blocks. Agents can still export when needed, but critical unreviewed categories and missing proof photos are clearly surfaced before export.
+## 5. Role AI tools played
 
-## Testing Performed
+AI tools were used as a development accelerator and reviewer, not as a replacement for product judgment. I used AI to help generate implementation drafts, inspect edge cases, review competing approaches, write QA prompts, and identify risks such as stale photo cache behavior, service worker cache issues, and backup/restore edge cases.
 
-Manual testing covered:
-
-- Desktop browser walkthrough flow
-- Android Chrome mobile layout
-- Android installed PWA offline behavior
-- Service Worker/offline reload behavior
-- Project create/open/rename/delete
-- Repair item selection and quantity updates
-- No Work and Bulk No-Work flows
-- Reset Project
-- Photo upload/capture
-- Serial/model fields
-- Price Book edits and CSV import/export
-- Review & Export guardrails
-- Deal Analyzer empty and completed states
-- ZIP/Excel export
-- Backup export and restore
-- Replace Current Project and Import as Copy restore flows
-- Dashboard repair totals
-
-## Known Limitations
-
-- Data is local to the browser/device unless exported through backup.
-- Clearing browser site data deletes local projects unless backed up first.
-- Android install prompts are controlled by the browser and may not appear automatically.
-- iOS installation requires Safari → Share → Add to Home Screen.
-- Browser speech recognition is a progressive enhancement and should not be treated as guaranteed offline functionality.
-
-## Final Notes
-
-Spark Repair Estimator is designed to be a practical acquisition-field tool, not just a checklist. The strongest parts of the implementation are its offline-first architecture, structured room walkthrough flow, local photo/serial capture, critical guardrails, price-book flexibility, Deal Analyzer, and professional ZIP/Excel export package.
+Final product decisions were made based on the contest requirements and field reliability. For example, I chose not to add OCR because it would look impressive but would make the offline app heavier and less reliable in real property conditions.

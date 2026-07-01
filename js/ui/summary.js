@@ -308,7 +308,7 @@ function _renderWarnings(warnings) {
 
   const rows = warnings.map(w => `
     <div class="sum-warning sum-warning--${_warnClass(w.type)}">
-      <span class="sum-warning__icon">${_warnIcon(w.type)}</span>
+      <span class="sum-warning__icon sum-warning__icon--${_warnClass(w.type)}" aria-hidden="true"></span>
       <span class="sum-warning__msg">${_esc(w.message)}</span>
     </div>
   `).join('');
@@ -326,14 +326,6 @@ function _warnClass(type) {
   if (type === 'critical-unreviewed') return 'red';
   if (type === 'critical-missing-qty') return 'orange';
   return 'orange';
-}
-
-function _warnIcon(type) {
-  if (type === 'critical-unreviewed')  return '🔴';
-  if (type === 'critical-missing-qty') return '⚠️';
-  if (type === 'serial-photo-missing') return '📷';
-  if (type === 'roof-photo-missing')   return '🏠';
-  return '⚠️';
 }
 
 // ============================================================================

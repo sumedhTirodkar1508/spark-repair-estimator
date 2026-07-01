@@ -14,6 +14,16 @@ Deployed app:
 https://spark-repair-estimator-sumedh.vercel.app/#/dashboard
 ```
 
+## Submission Deliverables
+
+This submission includes:
+
+- Live deployed static app: https://spark-repair-estimator-sumedh.vercel.app/#/dashboard
+- GitHub repository with all source/static files
+- One-page PDF writeup covering the required submission prompts
+
+The app has no build step, backend, login, API server, database server, or dependency installation requirement.
+
 ## Core Features
 
 - Offline-first mobile PWA
@@ -63,7 +73,9 @@ All data is stored locally in the browser using IndexedDB. The app shell is cach
 
 ## Run Locally
 
-A local HTTP server is required. Do not open the app with a `file://` URL because service workers and IndexedDB behavior can be blocked or inconsistent.
+The app is fully static and runs from the deployed link without installing dependencies. The repo includes all static files and has no build step.
+
+For local testing, use a simple static file server instead of opening `index.html` directly with a `file://` URL. Browser features such as ES modules, service workers, IndexedDB, and PWA install behavior can be blocked or inconsistent from `file://`.
 
 From the project root:
 
@@ -110,7 +122,7 @@ assets/
 
 ### Android Chrome
 
-Android Chrome may show an install prompt, but it is not guaranteed.
+Android Chrome may show an install prompt, but install prompts are browser-controlled and are not guaranteed.
 
 Manual install:
 
@@ -253,7 +265,7 @@ No data is sent to a server by the app.
 - Android install prompts are browser-controlled and may not appear automatically.
 - iOS installation is manual through Safari’s Share menu.
 - Speech input is best handled through the device keyboard’s built-in dictation.
-- OCR is intentionally not included because equipment labels vary widely and offline OCR would add risk and size.
+- OCR is intentionally not included. Equipment labels vary widely in lighting, angle, dirt, glare, and model format; offline OCR would add app size and reliability risk. The app instead prioritizes dependable manual serial/model capture with proof photos.
 - Clearing browser site data will remove locally stored projects unless they were backed up first.
 
 ## Project Structure
