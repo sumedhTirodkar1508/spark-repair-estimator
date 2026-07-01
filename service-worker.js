@@ -4,7 +4,7 @@
  * Update CACHE_NAME when any precached file changes.
  */
 
-const CACHE_NAME = 'spark-cache-v9';
+const CACHE_NAME = 'spark-cache-v16';
 
 /**
  * Complete list of files to precache.
@@ -37,6 +37,7 @@ const PRECACHE = [
   './js/ui/summary.js',
   './js/ui/priceBook.js',
   './js/ui/analyzer.js',
+  './js/ui/gallery.js',
 
   /* Vendored libraries */
   './vendor/jszip.min.js',

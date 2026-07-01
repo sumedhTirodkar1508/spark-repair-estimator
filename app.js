@@ -167,6 +167,11 @@ function parseRoute(hash) {
     return { name: 'project-analyzer', params: { id: analyzerMatch[1] } };
   }
 
+  const galleryMatch = path.match(/^\/project\/([^/]+)\/gallery$/);
+  if (galleryMatch) {
+    return { name: 'project-gallery', params: { id: galleryMatch[1] } };
+  }
+
   const projectMatch = path.match(/^\/project\/([^/]+)$/);
   if (projectMatch) {
     return { name: 'project', params: { id: projectMatch[1] } };
@@ -229,6 +234,15 @@ async function handleRoute(hash) {
         await renderAnalyzer(rootEl, route.params);
       } catch (_err) {
         _renderComingSoon(rootEl, 'Deal Analyzer', route.params.id);
+      }
+      break;
+
+    case 'project-gallery':
+      try {
+        const { render: renderGallery } = await import('./js/ui/gallery.js');
+        await renderGallery(rootEl, route.params);
+      } catch (_err) {
+        _renderComingSoon(rootEl, 'Photo Gallery', route.params.id);
       }
       break;
 

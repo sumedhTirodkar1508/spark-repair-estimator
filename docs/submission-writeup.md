@@ -16,11 +16,13 @@ OCR is intentionally not included. Equipment labels vary heavily in lighting, an
 
 ## 3. Creative addition and why I chose it
 
-My creative addition was turning the estimator into a complete field package workflow: Price Book, critical guardrails, Deal Analyzer, photo manifest, and backup/restore.
+My creative addition was turning the estimator into a complete field decision and evidence package, not just a repair checklist. I added a Deal Analyzer, critical guardrails, a structured Photo Gallery, and a professional ZIP/Excel export flow.
 
-The Deal Analyzer connects repair scope to acquisition decision-making. It uses ARV, offer price, selling/holding costs, target profit, and repair estimate to produce expected profit, maximum allowable offer, and PASS/WATCH/FAIL status. This makes the tool useful beyond cost entry: it helps the user decide whether the property still works as a deal.
+The Deal Analyzer connects the repair estimate to the acquisition decision. It uses ARV, offer price, selling/holding costs, target profit, and repair estimate to calculate expected profit, maximum allowable offer, and PASS/WATCH/FAIL status. This helps the agent decide whether the property still works as a deal, not just what the repairs cost.
 
-The export package also includes more than a basic estimate. The ZIP contains an Excel workbook with Estimate, Photo Manifest, Guardrail Warnings, Deal Analyzer, and Review Summary sheets, plus attached photos. This makes the output easier to review, share, and defend after the walkthrough.
+The Photo Gallery acts as a field evidence review screen. Instead of leaving photos scattered only inside individual line items, it gives the agent one place to review serial photos and repair item photos, preview them, replace bad shots, and delete mistakes before export. This matters in a real walkthrough because photos are often the proof behind expensive repairs such as HVAC, water heater, appliances, flooring, doors, and tile work.
+
+The final export package then turns the walkthrough into something reviewable by the team: an Excel workbook with Estimate, Photo Manifest, Guardrail Warnings, Deal Analyzer, and Review Summary sheets, plus the attached photos. This makes the output easier to defend, share, and act on after the property visit.
 
 ## 4. What I would ship next with two more days
 

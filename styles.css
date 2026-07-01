@@ -1493,6 +1493,167 @@ ul, ol {
 }
 
 /* ------------------------------------------------------------------
+   29b. WALKTHROUGH SEARCH (groups + line items)
+   ------------------------------------------------------------------ */
+
+.wt-search-wrap {
+  position: relative;
+  padding: var(--sp-2) calc(var(--safe-left) + var(--sp-4)) var(--sp-2) calc(var(--safe-left) + var(--sp-4));
+  padding-right: calc(var(--safe-right) + var(--sp-4));
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.wt-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.wt-search-icon {
+  position: absolute;
+  left: var(--sp-3);
+  color: var(--color-text-muted);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.wt-search-input {
+  width: 100%;
+  min-width: 0;
+  padding-left: calc(var(--sp-3) + 16px + var(--sp-2));
+  padding-right: calc(var(--sp-3) + 28px);
+}
+
+.wt-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.wt-search-clear-btn {
+  position: absolute;
+  right: var(--sp-2);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wt-search-clear-btn:hover,
+.wt-search-clear-btn:active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--color-text-2);
+}
+
+/* Absolutely-positioned dropdown so it never pushes the group list layout —
+   min-width:0 + break-word on children keeps it inside the viewport at
+   360/390/430px (the wrap already carries safe-area horizontal padding). */
+.wt-search-panel {
+  position: absolute;
+  top: 100%;
+  left: calc(var(--safe-left) + var(--sp-4));
+  right: calc(var(--safe-right) + var(--sp-4));
+  z-index: 20;
+  margin-top: var(--sp-1);
+  max-height: 50dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.wt-search-empty {
+  padding: var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.wt-search-section:not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.wt-search-section__title {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.wt-search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  min-height: var(--tap-min);
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wt-search-result:hover,
+.wt-search-result:active {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.wt-search-result__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.wt-search-result__id {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Brief highlight applied to the group card / line item scrolled to from a
+   search result, so the user can see exactly where they landed. */
+.wt-search-target {
+  animation: wt-search-flash 1.6s ease-out;
+}
+
+@keyframes wt-search-flash {
+  0%   { box-shadow: 0 0 0 2px var(--color-orange); background-color: var(--color-orange-bg); }
+  70%  { box-shadow: 0 0 0 2px var(--color-orange); background-color: var(--color-orange-bg); }
+  100% { box-shadow: none; background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-search-target {
+    animation: none;
+    outline: 2px solid var(--color-orange);
+    outline-offset: 2px;
+  }
+}
+
+/* ------------------------------------------------------------------
    30. GROUP CARDS (Agent A)
    ------------------------------------------------------------------ */
 .wt-group-list {
@@ -1529,6 +1690,11 @@ ul, ol {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
+  /* Combined "Room: Group" labels can run long — wrap cleanly, never overflow. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .wt-group-status-row {
@@ -2643,6 +2809,486 @@ ul, ol {
 }
 
 /* ==============================================================
+   Photo Gallery Screen (gal-*)
+   ============================================================== */
+
+.gal-page {
+  padding-bottom: calc(var(--sp-12) + var(--safe-bottom));
+}
+
+/* ── Summary strip: small rounded stat cards ─────────────────────
+   3 equal-width columns (Total / Serial / Item) — comfortably wide at
+   360px (page-content sp-4 padding + sp-2 gaps leaves ~104px per card). */
+
+.gal-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+}
+
+.gal-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 52px;
+  padding: var(--sp-2) var(--sp-1);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.gal-stat__value {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--color-orange-light);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.gal-stat__label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+/* ── Filter chips: rounded pills, wrap instead of scroll so the
+   page itself can never overflow horizontally ─────────────────── */
+
+.gal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-5);
+}
+
+.gal-chip {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 6px var(--sp-3);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-surface-2);
+  border: 1.5px solid transparent;
+  color: var(--color-text-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.gal-chip:hover {
+  background-color: var(--color-surface-3, var(--color-surface-2));
+  border-color: var(--color-border-light);
+  color: var(--color-text);
+}
+
+.gal-chip--active {
+  background-color: var(--color-orange);
+  border-color: var(--color-orange);
+  color: #1a0900;
+  font-weight: var(--weight-bold);
+}
+
+.gal-chip--active:hover {
+  background-color: var(--color-orange);
+  border-color: var(--color-orange);
+}
+
+/* ── Empty states — real cards, not plain text ───────────────────── */
+
+.gal-empty,
+.gal-empty-filtered {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.gal-empty-filtered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.gal-empty-filtered p {
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.gal-empty__icon {
+  opacity: 0.5;
+}
+
+/* ── Bucket headers: uppercase muted label + count badge ─────────── */
+
+.gal-bucket {
+  margin-bottom: var(--sp-6);
+}
+
+.gal-bucket__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding-bottom: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gal-bucket__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ── Card grid: explicit 2 columns on narrow mobile, 3 on wider
+   mobile/tablet — deterministic sizing instead of auto-fill so cards
+   stay visually consistent. .page-content already caps max-width, so
+   this can never overflow horizontally at 360/390/430px. ──────────── */
+
+.gal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+}
+
+@media (min-width: 480px) {
+  .gal-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.gal-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.gal-card:hover {
+  border-color: var(--color-border-light);
+}
+
+/* ── Thumbnail + overlay actions ──────────────────────────────── */
+
+.gal-card__thumb-wrap {
+  position: relative;
+}
+
+.gal-card__thumb-btn {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-surface-2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gal-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gal-card__placeholder,
+.gal-preview__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+/* Compact icon-only action row, overlaid top-right on the thumbnail —
+   the more polished option vs. a full bottom action row, and it keeps
+   cards short enough for a comfortable 2/3-column grid. */
+.gal-card__actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Card meta (kind badge, timestamp, context) ───────────────────── */
+
+.gal-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.gal-card__meta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.gal-card__kind {
+  flex-shrink: 0;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.gal-card__kind--serial {
+  background-color: rgba(234, 88, 12, 0.16);
+  color: var(--color-orange-light);
+}
+
+.gal-card__time {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.gal-card__context {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-2);
+  line-height: var(--leading-normal);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  /* Clamp to 2 lines so long context strings never blow out card height */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Icon-only action buttons (View / Replace / Delete / Close) ────
+   Shared by card overlays and the preview modal. Color communicates
+   intent so no text label is needed: blue=view, amber=replace, red=delete. */
+
+.gal-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.gal-icon-btn svg {
+  display: block;
+  pointer-events: none;
+}
+
+.gal-icon-btn:active {
+  transform: scale(0.9);
+}
+
+.gal-icon-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.gal-icon-btn--lg {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.gal-icon-btn--view {
+  background-color: var(--color-info);
+}
+.gal-icon-btn--view:hover {
+  background-color: #2563eb;
+}
+
+.gal-icon-btn--replace {
+  background-color: rgba(245, 158, 11, 0.85);
+}
+.gal-icon-btn--replace:hover {
+  background-color: var(--color-warning);
+}
+
+/* Dangerous but not cartoonish: solid, saturated, but no oversized glyph */
+.gal-icon-btn--delete {
+  background-color: rgba(239, 68, 68, 0.85);
+}
+.gal-icon-btn--delete:hover {
+  background-color: var(--color-danger);
+}
+
+.gal-icon-btn--neutral {
+  background-color: rgba(17, 24, 39, 0.72);
+}
+.gal-icon-btn--neutral:hover {
+  background-color: rgba(17, 24, 39, 0.9);
+}
+
+/* Fast CSS-only tooltip — appears on hover/keyboard focus. Not relied on
+   for mobile (no persistent :hover on touch); icon color/placement alone
+   already communicate each button's purpose there. */
+.gal-icon-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translate(-50%, 3px);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background-color: #111827;
+  color: #fff;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 90ms ease, transform 90ms ease;
+  z-index: 5;
+}
+
+.gal-icon-btn[data-tooltip]:hover::after,
+.gal-icon-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gal-icon-btn[data-tooltip]::after {
+    transition: none;
+  }
+}
+
+/* ── Preview lightbox ─────────────────────────────────────────── */
+
+.gal-preview {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  padding-top: calc(var(--safe-top) + var(--sp-4));
+  padding-bottom: calc(var(--safe-bottom) + var(--sp-4));
+  background-color: rgba(0, 0, 0, 0.72);
+}
+
+.gal-preview__panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  overflow-y: auto;
+}
+
+.gal-preview__close {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  z-index: 1;
+}
+
+.gal-preview__image-wrap {
+  width: 100%;
+  max-height: 60vh;
+  background-color: var(--color-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.gal-preview__image {
+  width: 100%;
+  height: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  display: block;
+}
+
+.gal-preview__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.gal-preview__meta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.gal-preview__context {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: var(--leading-normal);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.gal-preview__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-1) var(--sp-4) var(--sp-4);
+}
+
+/* ==============================================================
    Deal Analyzer Screen (an-*)
    Agent E — Phase 8
    ============================================================== */
@@ -2995,15 +3641,13 @@ a.icon-btn { text-decoration: none; }
   padding-right: calc(var(--safe-right) + var(--sp-2));
 }
 
-/* End bar layout: flexible spacer (left) + Bulk No-Work & Review grouped right */
+/* End bar layout: Gallery (left) + Bulk No-Work & Review grouped (right).
+   Gallery and Review both hold their size (flex-shrink:0); Bulk No-Work is
+   the one element that shrinks/ellipsizes first when space is tight, so all
+   three buttons stay on one row and legible down to 360px. */
 .wt-end-bar {
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--sp-2);
-}
-
-.wt-end-bar__spacer {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .wt-end-bar__right {
@@ -3013,6 +3657,25 @@ a.icon-btn { text-decoration: none; }
   gap: var(--sp-2);
   flex-shrink: 1;
   min-width: 0;
+}
+
+/* Gallery — secondary/ghost button, left of Bulk No-Work, never the primary CTA */
+.wt-gallery-btn {
+  flex-shrink: 0;
+  padding: var(--sp-2) var(--sp-3);
+  min-height: var(--tap-min);
+  white-space: nowrap;
+  margin-right: auto;
+  gap: 6px;
+  background-color: transparent;
+  color: var(--color-text-2);
+  border: 1.5px solid var(--color-border-light);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.wt-gallery-btn:hover {
+  background-color: var(--color-surface-2);
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
 }
 
 /* Bulk No-Work — secondary/outline button, shrinks gracefully */
@@ -3042,13 +3705,10 @@ a.icon-btn { text-decoration: none; }
   min-height: var(--tap-min);
 }
 
-/* Narrow screens (≤360px): hide the spacer; let the right group use full width */
+/* Very narrow screens (≤360px): trim Gallery's own padding a touch so all
+   three buttons keep a comfortable amount of breathing room. */
 @media (max-width: 360px) {
-  .wt-end-bar__spacer {
-    display: none;
-  }
-  .wt-end-bar__right {
-    flex: 1 1 auto;
-    justify-content: flex-end;
+  .wt-gallery-btn {
+    padding: var(--sp-2);
   }
 }

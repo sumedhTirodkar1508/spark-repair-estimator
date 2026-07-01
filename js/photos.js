@@ -11,10 +11,37 @@
 import {
   putPhoto,
   getPhotosByProject,
+  getPhoto as dbGetPhoto,
   deletePhoto as dbDeletePhoto,
 } from './db.js';
 
 import { getActiveProject } from './state.js';
+
+// ---------------------------------------------------------------------------
+// Photo-change subscription (lightweight pub-sub, mirrors state.js onChange)
+// ---------------------------------------------------------------------------
+
+/** @type {Set<function>} */
+const _photoSubscribers = new Set();
+
+/**
+ * Subscribe to photo-collection changes (currently: deletePhoto). Lets UI
+ * modules that keep their own photo cache (e.g. walkthrough.js) refresh
+ * immediately when a photo is removed from somewhere else (e.g. a gallery
+ * screen), without a full page reload.
+ * @param {function} callback
+ * @returns {function} unsubscribe
+ */
+export function onPhotosChanged(callback) {
+  _photoSubscribers.add(callback);
+  return () => _photoSubscribers.delete(callback);
+}
+
+function _emitPhotosChanged() {
+  for (const cb of _photoSubscribers) {
+    try { cb(); } catch (err) { console.error('[photos] onPhotosChanged callback error', err); }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // §23  compressImage
@@ -250,6 +277,46 @@ export async function addPhoto(projectId, { scope, refKey, kind, blob, thumbBlob
 }
 
 // ---------------------------------------------------------------------------
+// replacePhoto (Photo Gallery — replace image, keep identity/context)
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace the image content of an EXISTING photo record in place.
+ *
+ * Preserves the record's identity and context exactly: same id, projectId,
+ * scope, refKey, kind, and original createdAt. Only blob/thumbBlob/w/h/bytes
+ * are regenerated from the new image, using the same compressImage +
+ * makeThumbnail pipeline as normal capture. Writes back with the same id
+ * (IndexedDB keyPath), so this never creates a duplicate record.
+ *
+ * @param {string} photoId
+ * @param {File|Blob} fileOrBlob
+ * @returns {Promise<object>} the updated photo record
+ */
+export async function replacePhoto(photoId, fileOrBlob) {
+  const existing = await dbGetPhoto(photoId);
+  if (!existing) {
+    throw new Error(`replacePhoto: photo "${photoId}" not found`);
+  }
+
+  const { blob, w, h } = await compressImage(fileOrBlob);
+  const thumbBlob       = await makeThumbnail(blob);
+
+  const record = {
+    ...existing,
+    blob,
+    thumbBlob,
+    w,
+    h,
+    bytes: blob.size,
+  };
+
+  await putPhoto(record);
+  _emitPhotosChanged();
+  return record;
+}
+
+// ---------------------------------------------------------------------------
 // §23  getPhotos
 // ---------------------------------------------------------------------------
 
@@ -299,6 +366,7 @@ export function getThumbURL(photoRecord) {
  */
 export async function deletePhoto(photoId) {
   await dbDeletePhoto(photoId);
+  _emitPhotosChanged();
 }
 
 // ---------------------------------------------------------------------------

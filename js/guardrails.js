@@ -97,7 +97,7 @@ export function getCriticalWarnings(project, photosByRefKey, globalPrices) {
           type: 'critical-unreviewed',
           instanceId,
           groupKey,
-          message: `Critical category "${_groupLabel(groupKey)}" in "${room.label || instanceId}" has not been reviewed.`,
+          message: `Critical category "${_roomGroupLabel(room, instanceId, groupKey)}" has not been reviewed.`,
         });
       }
 
@@ -126,7 +126,7 @@ export function getCriticalWarnings(project, photosByRefKey, globalPrices) {
             instanceId,
             groupKey,
             itemId,
-            message: `"${_itemName(itemId, project)}" in "${room.label || instanceId}" is selected but has no quantity.`,
+            message: `"${_itemName(itemId, project)}" in "${_roomGroupLabel(room, instanceId, groupKey)}" is selected but has no quantity.`,
           });
         }
 
@@ -141,7 +141,7 @@ export function getCriticalWarnings(project, photosByRefKey, globalPrices) {
               instanceId,
               groupKey,
               itemId,
-              message: `Serial/model photo required for "${_itemName(itemId, project)}" in "${room.label || instanceId}".`,
+              message: `Serial/model photo required for "${_itemName(itemId, project)}" in "${_roomGroupLabel(room, instanceId, groupKey)}".`,
             });
           }
         }
@@ -227,6 +227,20 @@ export function getNonCriticalUnreviewed(project) {
 function _groupLabel(groupKey) {
   const grp = GROUPS[groupKey];
   return grp ? grp.label : groupKey;
+}
+
+/**
+ * Explicit "Room: Group" context label, e.g. "Bathroom 1: Vanity & Countertop" —
+ * matches the same combined label shown on the walkthrough group card so
+ * warning text is unambiguous about which room instance it refers to.
+ * @param {{label?:string}} room
+ * @param {string} instanceId
+ * @param {string} groupKey
+ * @returns {string}
+ */
+function _roomGroupLabel(room, instanceId, groupKey) {
+  const roomLabel = (room && room.label) || instanceId;
+  return `${roomLabel}: ${_groupLabel(groupKey)}`;
 }
 
 /**

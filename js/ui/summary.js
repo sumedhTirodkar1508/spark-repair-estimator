@@ -207,6 +207,9 @@ async function _renderContent(rootEl) {
             <a href="#/project/${_esc(projectId)}/analyzer" class="btn btn--secondary sum-btn">
               Open Deal Analyzer
             </a>
+            <a href="#/project/${_esc(projectId)}/gallery" class="btn btn--secondary sum-btn">
+              Photo Gallery
+            </a>
             ${nonCritLen > 0 ? `
               <button class="btn btn--ghost sum-btn" data-action="sum-bulk-none">
                 Mark ${nonCritLen} Non-Critical as No Work Needed

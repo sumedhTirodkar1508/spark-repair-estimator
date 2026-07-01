@@ -73,6 +73,7 @@ import {
   getThumbURL,
   deletePhoto as photosDeletePhoto,
   countSerialPhotos,
+  onPhotosChanged,
 } from '../photos.js';
 
 /* ============================================================
@@ -94,6 +95,13 @@ let _suppressRerender = false;
 /** instanceId::itemId to focus after next re-render (set when toggling item on) */
 let _pendingFocusSelKey = null;
 
+/** Current search query text (module-level so it survives in-place result updates) */
+let _searchQuery = '';
+
+/** { instanceId, groupKey, itemId? } to scroll into view + highlight after the
+ *  next render — set when a search result is tapped */
+let _pendingScrollTarget = null;
+
 /** Project id that was last fully rendered — used to reset UI state on switch */
 let _renderedProjectId = null;
 
@@ -105,6 +113,10 @@ const _speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecog
 
 /** onChange unsubscribe fn — stored so we don't double-subscribe */
 let _unsubscribe = null;
+
+/** onPhotosChanged unsubscribe fn — refreshes inline photo slots when a photo
+ *  is deleted elsewhere (e.g. the Photo Gallery screen), without a page reload. */
+let _unsubscribePhotos = null;
 
 /* ============================================================
    Photo cache (Agent B)
@@ -155,6 +167,7 @@ export async function render(rootEl, params) {
     _activeSectionId = SECTIONS[0].id;
     _activeSubTab.clear();
     _expandedGroups.clear();
+    _searchQuery = '';
     _renderedProjectId = project.id;
     _renderedProjectUpdatedAt = project.updatedAt || null;
     // Load photo cache for the new project (async; re-render when done)
@@ -173,6 +186,9 @@ export async function render(rootEl, params) {
   if (!_unsubscribe) {
     _unsubscribe = onChange(_onStateChange);
   }
+  if (!_unsubscribePhotos) {
+    _unsubscribePhotos = onPhotosChanged(_onPhotosChanged);
+  }
 
   _renderWalkthrough(rootEl, project);
 }
@@ -187,7 +203,7 @@ function _onStateChange() {
   const active = document.activeElement;
   if (active) {
     const act = active.dataset && active.dataset.action;
-    if (act === 'wt-qty-input' || act === 'wt-note-input' || act === 'wt-serial-field') return;
+    if (act === 'wt-qty-input' || act === 'wt-note-input' || act === 'wt-serial-field' || act === 'wt-search-input') return;
   }
 
   // Only re-render if walkthrough is the visible route
@@ -203,6 +219,30 @@ function _onStateChange() {
       _cleanListeners(rootEl);
       _renderWalkthrough(rootEl, project);
     }
+  }
+}
+
+/**
+ * Fires when a photo is deleted from anywhere in the app (e.g. the Photo
+ * Gallery screen). Reloads the photo cache from IndexedDB and re-renders so
+ * inline photo slots reflect the deletion immediately — no page reload.
+ */
+function _onPhotosChanged() {
+  if (_suppressRerender) return;
+  const active = document.activeElement;
+  if (active) {
+    const act = active.dataset && active.dataset.action;
+    if (act === 'wt-qty-input' || act === 'wt-note-input' || act === 'wt-serial-field' || act === 'wt-search-input') return;
+  }
+
+  const hash = window.location.hash;
+  if (
+    hash.startsWith('#/project/') &&
+    !hash.includes('/summary') &&
+    !hash.includes('/analyzer')
+  ) {
+    const project = getActiveProject();
+    if (project) _loadPhotoCache(project.id); // reloads cache then triggers _fullRerender()
   }
 }
 
@@ -305,6 +345,7 @@ function _renderWalkthrough(rootEl, project) {
       ${_sectionTabsHtml()}
     </div>
     ${section.multi ? _roomSubTabsHtml(section, instances, activeInstanceId) : ''}
+    ${_searchBarHtml()}
     <div id="wt-groups-container">
       ${activeRoom ? _groupCardsHtml(activeRoom, project, globalPrices) : _emptyRoomHtml(section)}
     </div>
@@ -312,9 +353,10 @@ function _renderWalkthrough(rootEl, project) {
   `;
 
   // Attach delegated handlers
-  rootEl.addEventListener('click',  _wtClickHandler);
-  rootEl.addEventListener('input',  _wtInputHandler);
-  rootEl.addEventListener('change', _wtChangeHandler);
+  rootEl.addEventListener('click',   _wtClickHandler);
+  rootEl.addEventListener('input',   _wtInputHandler);
+  rootEl.addEventListener('change',  _wtChangeHandler);
+  rootEl.addEventListener('keydown', _wtKeydownHandler);
 
   // Focus pending qty input from toggle
   if (_pendingFocusSelKey) {
@@ -325,12 +367,42 @@ function _renderWalkthrough(rootEl, project) {
       if (inp) { inp.focus(); inp.select(); }
     });
   }
+
+  // Scroll to + briefly highlight a search result's target group/item
+  if (_pendingScrollTarget) {
+    const target = _pendingScrollTarget;
+    _pendingScrollTarget = null;
+    requestAnimationFrame(() => {
+      const compositeKey = `${target.instanceId}::${target.groupKey}`;
+      let scrollEl = document.querySelector(`[data-group-card="${compositeKey}"]`);
+      let highlightEl = scrollEl;
+
+      if (target.itemId) {
+        const selKey  = `${target.instanceId}::${target.itemId}`;
+        const itemEl  = document.getElementById('line-item-' + _safeId(selKey));
+        if (itemEl) {
+          scrollEl    = itemEl;
+          highlightEl = itemEl;
+        }
+      }
+
+      if (scrollEl) {
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        scrollEl.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+      }
+      if (highlightEl) {
+        highlightEl.classList.add('wt-search-target');
+        setTimeout(() => highlightEl.classList.remove('wt-search-target'), 1600);
+      }
+    });
+  }
 }
 
 function _cleanListeners(rootEl) {
-  rootEl.removeEventListener('click',  _wtClickHandler);
-  rootEl.removeEventListener('input',  _wtInputHandler);
-  rootEl.removeEventListener('change', _wtChangeHandler);
+  rootEl.removeEventListener('click',   _wtClickHandler);
+  rootEl.removeEventListener('input',   _wtInputHandler);
+  rootEl.removeEventListener('change',  _wtChangeHandler);
+  rootEl.removeEventListener('keydown', _wtKeydownHandler);
 }
 
 /* ============================================================
@@ -459,6 +531,194 @@ function _roomSubTabsHtml(section, instances, activeInstanceId) {
 }
 
 /* ============================================================
+   Search (groups + line items, project-aware, local filter only)
+   ============================================================ */
+
+/**
+ * Search field row + results panel wrapper. Rendered once per full render;
+ * the results panel itself is updated in place on every keystroke via
+ * _updateSearchPanel() to avoid losing input focus (same strategy as qty
+ * inputs elsewhere in this file).
+ */
+function _searchBarHtml() {
+  const project = getActiveProject();
+  return `
+    <div class="wt-search-wrap">
+      <div class="wt-search-input-wrap">
+        <svg class="wt-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          type="search"
+          class="input input--sm wt-search-input"
+          placeholder="Search groups, items, room, or item ID…"
+          value="${_esc(_searchQuery)}"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          enterkeyhint="search"
+          data-action="wt-search-input"
+          aria-label="Search groups and line items"
+        />
+        ${_searchQuery ? `
+          <button type="button" class="wt-search-clear-btn" data-action="wt-search-clear" aria-label="Clear search">✕</button>
+        ` : ''}
+      </div>
+      <div id="wt-search-panel-wrap">
+        ${project ? _searchResultsHtml(project, _searchQuery) : ''}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Re-render just the results panel in place (called on every keystroke).
+ * Leaves the input element untouched so focus/cursor position is preserved.
+ */
+function _updateSearchPanel() {
+  const rootEl = document.getElementById('app');
+  const wrap   = rootEl && rootEl.querySelector('#wt-search-panel-wrap');
+  const project = getActiveProject();
+  if (wrap && project) {
+    wrap.innerHTML = _searchResultsHtml(project, _searchQuery);
+  }
+  // Toggle the clear button without a full re-render
+  const clearBtn = rootEl && rootEl.querySelector('.wt-search-clear-btn');
+  const hasQuery = !!_searchQuery.trim();
+  if (hasQuery && !clearBtn) {
+    const inputWrap = rootEl.querySelector('.wt-search-input-wrap');
+    if (inputWrap) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'wt-search-clear-btn';
+      btn.dataset.action = 'wt-search-clear';
+      btn.setAttribute('aria-label', 'Clear search');
+      btn.textContent = '✕';
+      inputWrap.appendChild(btn);
+    }
+  } else if (!hasQuery && clearBtn) {
+    clearBtn.remove();
+  }
+}
+
+/**
+ * Build the results panel HTML for the current query. Returns '' for an
+ * empty query (compact — no panel shown at all until the user types).
+ * @param {object} project
+ * @param {string} query
+ * @returns {string}
+ */
+function _searchResultsHtml(project, query) {
+  const q = (query || '').trim();
+  if (!q) return '';
+
+  const { groups, items } = _runSearch(project, q);
+
+  if (groups.length === 0 && items.length === 0) {
+    return `
+      <div class="wt-search-panel" id="wt-search-panel">
+        <p class="wt-search-empty">No matching groups or items.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="wt-search-panel" id="wt-search-panel" role="listbox" aria-label="Search results">
+      ${groups.length ? `
+        <div class="wt-search-section">
+          <div class="wt-search-section__title">Groups</div>
+          ${groups.map(g => _searchResultRowHtml(g)).join('')}
+        </div>
+      ` : ''}
+      ${items.length ? `
+        <div class="wt-search-section">
+          <div class="wt-search-section__title">Line Items</div>
+          ${items.map(it => _searchResultRowHtml(it)).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function _searchResultRowHtml(entry) {
+  return `
+    <button
+      type="button"
+      class="wt-search-result"
+      role="option"
+      data-action="wt-search-select"
+      data-instance-id="${_esc(entry.instanceId)}"
+      data-group-key="${_esc(entry.groupKey)}"
+      ${entry.itemId ? `data-item-id="${_esc(entry.itemId)}"` : ''}
+    >
+      <span class="wt-search-result__label">${_esc(entry.contextLabel)}</span>
+      ${entry.itemId ? `<span class="wt-search-result__id">${_esc(entry.itemId)}</span>` : ''}
+    </button>
+  `;
+}
+
+/**
+ * Filter the current project's rooms/groups/items against a query.
+ * Multi-word queries (e.g. "Bathroom 1 vanity") require every token to be
+ * found somewhere in the entry's combined room+group(+item) text — order
+ * independent, case-insensitive, substring match.
+ *
+ * Reuses getGroupsForInstance / getItemsForGroup so results automatically
+ * respect current room instances, deleted items, and custom items — no
+ * separate index/state to keep in sync.
+ *
+ * @param {object} project
+ * @param {string} query
+ * @returns {{groups:object[], items:object[]}}
+ */
+function _runSearch(project, query) {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const MAX_GROUPS = 8;
+  const MAX_ITEMS  = 12;
+
+  const groupResults = [];
+  const itemResults  = [];
+
+  for (const room of (project.rooms || [])) {
+    const tmpl = ROOM_TEMPLATES[room.roomType];
+    if (!tmpl) continue;
+    const roomLabel = room.label || room.instanceId;
+    const groups = getGroupsForInstance(room.instanceId, room.roomType);
+
+    for (const grp of groups) {
+      const groupHay = `${roomLabel} ${grp.label}`.toLowerCase();
+      if (groupResults.length < MAX_GROUPS && tokens.every(t => groupHay.includes(t))) {
+        groupResults.push({
+          instanceId: room.instanceId,
+          groupKey: grp.key,
+          itemId: null,
+          contextLabel: `${roomLabel}: ${grp.label}`,
+        });
+      }
+
+      if (itemResults.length >= MAX_ITEMS) continue;
+
+      const items = getItemsForGroup(grp.key, project);
+      for (const item of items) {
+        if (itemResults.length >= MAX_ITEMS) break;
+        const itemHay = `${roomLabel} ${grp.label} ${item.name} ${item.id}`.toLowerCase();
+        if (tokens.every(t => itemHay.includes(t))) {
+          itemResults.push({
+            instanceId: room.instanceId,
+            groupKey: grp.key,
+            itemId: item.id,
+            contextLabel: `${roomLabel}: ${grp.label} > ${item.name}`,
+          });
+        }
+      }
+    }
+  }
+
+  return { groups: groupResults, items: itemResults };
+}
+
+/* ============================================================
    Group Cards Container
    ============================================================ */
 
@@ -494,6 +754,12 @@ function _groupCardHtml(group, room, project, globalPrices) {
   const compositeKey = `${instanceId}::${groupKey}`;
   const expanded     = _expandedGroups.has(compositeKey);
 
+  // Explicit room+group context, e.g. "Bathroom 1: Vanity & Countertop",
+  // "Bedroom 1: Flooring", "Living 1: Lighting" — same pattern for singleton
+  // sections too ("Systems & Structure: HVAC") for consistency across the app.
+  const roomLabel      = room.label || instanceId;
+  const combinedLabel  = `${roomLabel}: ${label}`;
+
   const status     = getEffectiveStatus(instanceId, groupKey, project);
   const isCritical = _isCriticalNow(groupKey, instanceId, project, critical, conditionalItemIds);
   const selCount   = _countSelections(instanceId, groupKey, project);
@@ -509,10 +775,12 @@ function _groupCardHtml(group, room, project, globalPrices) {
       <div class="card__header wt-group-header"
            data-action="wt-toggle-group"
            data-composite="${compositeKey}"
-           style="cursor:pointer">
+           style="cursor:pointer"
+           aria-expanded="${expanded ? 'true' : 'false'}"
+           aria-label="${_esc(combinedLabel)} — tap to ${expanded ? 'collapse' : 'expand'}">
         <div class="wt-group-meta">
           <div class="wt-group-label-row">
-            <span class="wt-group-label">${_esc(label)}</span>
+            <span class="wt-group-label">${_esc(combinedLabel)}</span>
             ${isCritical ? '<span class="badge badge--danger" style="font-size:9px">Critical</span>' : ''}
           </div>
           <div class="wt-group-status-row">
@@ -942,7 +1210,14 @@ function _endBarHtml(project) {
 
   return `
     <div class="wt-end-bar">
-      <div class="wt-end-bar__spacer"></div>
+      <button
+        type="button"
+        class="btn btn--sm wt-gallery-btn"
+        data-action="wt-goto-gallery"
+        data-project-id="${project.id}"
+        aria-label="Photo Gallery"
+        title="Photo Gallery"
+      ><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Gallery</button>
       <div class="wt-end-bar__right">
         ${bulkBtn}
         <button
@@ -985,6 +1260,22 @@ function _wtInputHandler(e) {
     _suppressRerender = true;
     // No state write on every keystroke — write on blur/change (below)
     setTimeout(() => { _suppressRerender = false; }, 200);
+  }
+  // Search: local filter only — no state mutation, no debounce needed.
+  // Updates just the results panel in place so the input keeps focus.
+  if (el.dataset && el.dataset.action === 'wt-search-input') {
+    _searchQuery = el.value;
+    _updateSearchPanel();
+  }
+}
+
+function _wtKeydownHandler(e) {
+  const el = e.target;
+  if (el.dataset && el.dataset.action === 'wt-search-input' && e.key === 'Escape') {
+    el.value = '';
+    _searchQuery = '';
+    _updateSearchPanel();
+    el.blur();
   }
 }
 
@@ -1031,6 +1322,41 @@ async function _handleWtAction(action, el, e) {
     case 'wt-goto-summary': {
       const pid = el.dataset.projectId || project.id;
       window.location.hash = `#/project/${pid}/summary`;
+      break;
+    }
+
+    case 'wt-goto-gallery': {
+      const pid = el.dataset.projectId || project.id;
+      window.location.hash = `#/project/${pid}/gallery`;
+      break;
+    }
+
+    /* ------ Search: jump to a group or line item ------ */
+    case 'wt-search-select': {
+      const { instanceId, groupKey, itemId } = el.dataset;
+      const room = project.rooms.find(r => r.instanceId === instanceId);
+      const tmpl = room ? ROOM_TEMPLATES[room.roomType] : null;
+      if (!room || !tmpl) break;
+
+      const section = SECTIONS.find(s => s.id === tmpl.section);
+      _activeSectionId = tmpl.section;
+      if (section && section.multi) {
+        _activeSubTab.set(tmpl.section, instanceId);
+      }
+      _expandedGroups.add(`${instanceId}::${groupKey}`);
+
+      _searchQuery = '';
+      _pendingScrollTarget = { instanceId, groupKey, itemId: itemId || null };
+
+      _fullRerender();
+      break;
+    }
+
+    case 'wt-search-clear': {
+      _searchQuery = '';
+      _updateSearchPanel();
+      const input = document.querySelector('.wt-search-input');
+      if (input) { input.value = ''; input.focus(); }
       break;
     }
 
