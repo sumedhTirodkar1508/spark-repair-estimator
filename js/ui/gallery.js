@@ -29,6 +29,10 @@ import {
 
 import { buildPhotoManifestRows } from '../export.js';
 
+import { getGroupsForInstance, getItemsForGroup } from '../catalog.js';
+
+import { jumpToWalkthroughTarget } from './walkthrough.js';
+
 import { confirm, toast } from './components.js';
 
 // ============================================================================
@@ -419,6 +423,72 @@ function _cardHtml({ photo, context, filterKind, kindLabel, timestamp }) {
 }
 
 /**
+ * Find which group (within a room instance) contains a given catalog/custom
+ * item id. Mirrors the exact lookup export.js's buildPhotoManifestRows
+ * already uses to derive a group label for item-scope photos — same
+ * algorithm, just returning the group KEY instead of its label, since the
+ * walkthrough jump needs the key to expand the right group.
+ * @param {object} project
+ * @param {string} instanceId
+ * @param {string} itemId
+ * @returns {string|null}
+ */
+function _findGroupKeyForItem(project, instanceId, itemId) {
+  const room = (project.rooms || []).find(r => r.instanceId === instanceId);
+  if (!room) return null;
+  const groups = getGroupsForInstance(instanceId, room.roomType);
+  for (const grp of groups) {
+    const items = getItemsForGroup(grp.key, project);
+    if (items.some(it => it.id === itemId)) return grp.key;
+  }
+  return null;
+}
+
+/**
+ * Derive a walkthrough jump target ({instanceId, groupKey, itemId}) from a
+ * photo record's scope/refKey, for the preview's "Go to Source" action.
+ *   scope 'item'    → refKey "instanceId::itemId"   → resolve the item's group
+ *   scope 'group'   → refKey "instanceId::groupKey" → direct
+ *   scope 'room'    → refKey "instanceId"            → jump to the room's first group
+ *   scope 'project' → no room/group context — not resolvable
+ * @param {object} photo
+ * @param {object} project
+ * @returns {{instanceId:string, groupKey:string, itemId:string|null}|null}
+ */
+function _deriveJumpTarget(photo, project) {
+  if (!project) return null;
+  const refKey = photo.refKey || '';
+
+  if (photo.scope === 'item') {
+    const sep = refKey.indexOf('::');
+    if (sep === -1) return null;
+    const instanceId = refKey.slice(0, sep);
+    const itemId      = refKey.slice(sep + 2);
+    const groupKey    = _findGroupKeyForItem(project, instanceId, itemId);
+    if (!groupKey) return null;
+    return { instanceId, groupKey, itemId };
+  }
+
+  if (photo.scope === 'group') {
+    const sep = refKey.indexOf('::');
+    if (sep === -1) return null;
+    return { instanceId: refKey.slice(0, sep), groupKey: refKey.slice(sep + 2), itemId: null };
+  }
+
+  if (photo.scope === 'room') {
+    const instanceId = refKey;
+    const room = (project.rooms || []).find(r => r.instanceId === instanceId);
+    if (!room) return null;
+    const groups = getGroupsForInstance(instanceId, room.roomType);
+    if (!groups.length) return null;
+    return { instanceId, groupKey: groups[0].key, itemId: null };
+  }
+
+  // scope === 'project' — no room/group context to jump to.
+  return null;
+}
+
+/**
  * Full-screen preview lightbox for the photo currently in _previewPhotoId.
  * Backdrop + explicit close button both close it; a click anywhere inside
  * the panel does NOT close it (see the el.classList check in _handleClick).
@@ -432,6 +502,7 @@ function _previewHtml() {
   const filterKind = _filterKindOf(photo);
   const kindLabel  = KIND_LABELS[filterKind] || 'Photo';
   const timestamp  = _fmtTimestamp(photo.createdAt);
+  const jumpTarget = _deriveJumpTarget(photo, _currentProject);
 
   let fullSrc = '';
   if (photo.blob) {
@@ -465,6 +536,18 @@ function _previewHtml() {
           <p class="gal-preview__context">${_esc(context)}</p>
         </div>
         <div class="gal-preview__actions">
+          ${jumpTarget ? `
+            <button
+              type="button"
+              class="gal-icon-btn gal-icon-btn--neutral gal-icon-btn--lg"
+              data-action="gal-goto-source"
+              data-instance-id="${_esc(jumpTarget.instanceId)}"
+              data-group-key="${_esc(jumpTarget.groupKey)}"
+              ${jumpTarget.itemId ? `data-item-id="${_esc(jumpTarget.itemId)}"` : ''}
+              data-tooltip="Go to Source"
+              aria-label="Go to Source"
+            >${_iconGoto(18)}</button>
+          ` : ''}
           <button
             type="button"
             class="gal-icon-btn gal-icon-btn--replace gal-icon-btn--lg"
@@ -518,6 +601,10 @@ function _iconClose() {
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 }
 
+function _iconGoto(size = 15) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+}
+
 // ============================================================================
 // Event handling
 // ============================================================================
@@ -561,6 +648,24 @@ async function _handleClick(e) {
     if (el.classList.contains('gal-preview') && e.target !== el) return;
     _previewPhotoId = null;
     _rerender();
+    return;
+  }
+
+  if (action === 'gal-goto-source') {
+    const instanceId = el.dataset.instanceId;
+    const groupKey    = el.dataset.groupKey;
+    const itemId      = el.dataset.itemId || null;
+    if (!instanceId || !groupKey || !_currentProject) return;
+
+    // Pure state handoff — no photo data is read/written here. jumpToWalkthroughTarget
+    // sets the target section/room-tab/expanded-group on the walkthrough module so
+    // its own render() picks it up and scrolls/highlights once the hash changes.
+    const ok = jumpToWalkthroughTarget({ instanceId, groupKey, itemId });
+    if (!ok) {
+      toast('Could not locate that item in the walkthrough.', { type: 'error' });
+      return;
+    }
+    window.location.hash = `#/project/${_currentProject.id}`;
     return;
   }
 

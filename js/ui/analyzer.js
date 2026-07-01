@@ -157,7 +157,7 @@ function _renderFull(rootEl, project, globalPrices) {
 
         <!-- ── Results (updated in-place on input) ──────────────────────── -->
         <section class="an-section" id="an-results">
-          ${_resultsHtml(deal, _isReady(inputs))}
+          ${_resultsHtml(deal, _isReady(inputs), inputs)}
         </section>
 
         <p class="an-footnote">
@@ -185,14 +185,14 @@ function _updateResults(rootEl, project, globalPrices) {
   const rtEl = rootEl.querySelector('.an-repair-total__value');
   if (rtEl) rtEl.textContent = formatMoney(repairTotal);
 
-  resultsEl.innerHTML = _resultsHtml(deal, _isReady(inputs));
+  resultsEl.innerHTML = _resultsHtml(deal, _isReady(inputs), inputs);
 }
 
 // ============================================================================
 // _resultsHtml — renders the results block as a string
 // ============================================================================
 
-function _resultsHtml(deal, ready) {
+function _resultsHtml(deal, ready, inputs) {
   // Don't compute / show PASS·WATCH·FAIL until the minimum inputs exist.
   if (!ready) {
     return `
@@ -236,8 +236,79 @@ function _resultsHtml(deal, ready) {
         <span class="an-status__label">${_statusLabel(deal.status)}</span>
       </div>
 
+      ${_offerGapHtml(deal, inputs)}
+
     </div>
   `;
+}
+
+// ============================================================================
+// _offerGapHtml — "Offer Gap / What needs to change?" actionable explanation
+// ============================================================================
+
+/**
+ * Offer Gap is derived, not a new formula: mao is defined as the offer price
+ * at which expectedProfit == targetProfit, so algebraically
+ *   offerPrice - mao  ==  targetProfit - expectedProfit
+ * i.e. the amount the offer exceeds MAO is exactly the profit shortfall.
+ * This reuses computeDeal's existing mao/expectedProfit outputs as-is —
+ * no change to the deal formula.
+ *
+ * @param {{status:'PASS'|'WATCH'|'FAIL', mao:number, expectedProfit:number}} deal
+ * @param {object} inputs  raw analyzer inputs (for offerPrice/targetProfit)
+ * @returns {string}
+ */
+function _offerGapHtml(deal, inputs) {
+  const offerPrice   = _num(inputs.offerPrice);
+  const targetProfit = _num(inputs.targetProfit);
+  const gap           = offerPrice - deal.mao; // > 0 whenever status is WATCH or FAIL
+
+  if (deal.status === 'PASS') {
+    const cushion = Math.max(0, deal.expectedProfit - targetProfit);
+    return `
+      <div class="an-offer-gap an-offer-gap--pass">
+        <p class="an-offer-gap__text">Deal has <strong>${formatMoney(cushion)}</strong> cushion above target profit.</p>
+      </div>
+    `;
+  }
+
+  const reduction = Math.max(0, gap);
+
+  if (deal.status === 'FAIL') {
+    return `
+      <div class="an-offer-gap an-offer-gap--fail">
+        <p class="an-offer-gap__title">Offer Gap</p>
+        <div class="an-offer-gap__row">
+          <span class="an-offer-gap__row-label">Current Offer</span>
+          <span class="an-offer-gap__row-value">${formatMoney(offerPrice)}</span>
+        </div>
+        <div class="an-offer-gap__row">
+          <span class="an-offer-gap__row-label">Max Allowable Offer</span>
+          <span class="an-offer-gap__row-value">${formatMoney(deal.mao)}</span>
+        </div>
+        <p class="an-offer-gap__text">Reduce offer by <strong>${formatMoney(reduction)}</strong> to meet the target profit.</p>
+      </div>
+    `;
+  }
+
+  // WATCH — close, but the offer still needs to come down (or profit go up)
+  // by the same amount to fully clear the target-profit bar.
+  return `
+    <div class="an-offer-gap an-offer-gap--watch">
+      <p class="an-offer-gap__text">Close to target — reduce the offer by <strong>${formatMoney(reduction)}</strong> (or improve ARV/costs by the same amount) to fully meet your target profit.</p>
+    </div>
+  `;
+}
+
+/**
+ * Coerce a value to a finite number; blank/null/NaN → 0. Mirrors
+ * dealAnalyzer.js's own _n() helper for consistent input normalisation.
+ * @param {any} v
+ * @returns {number}
+ */
+function _num(v) {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
 }
 
 /**

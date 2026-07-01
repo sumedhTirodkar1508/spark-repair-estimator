@@ -34,6 +34,8 @@ After that, I would add a Portfolio Compare view for reviewing multiple properti
 
 ## 5. Role AI tools played
 
-AI tools were used as a development accelerator and reviewer, not as a replacement for product judgment. I used AI to help generate implementation drafts, inspect edge cases, review competing approaches, write QA prompts, and identify risks such as stale photo cache behavior, service worker cache issues, and backup/restore edge cases.
+AI tools were used heavily as development accelerators, code-review partners, and planning assistants. I used Claude Code, Codex, and Antigravity IDE to help generate and refactor parts of the implementation, while ChatGPT and Gemini were used to reason through architecture, feature tradeoffs, UX polish, edge cases, testing plans, and submission positioning.
 
-Final product decisions were made based on the contest requirements and field reliability. For example, I chose not to add OCR because it would look impressive but would make the offline app heavier and less reliable in real property conditions.
+I treated AI output as drafts rather than final answers. I reviewed the generated code, tested features manually, checked for regressions, and made the final product decisions based on the contest requirements and field reliability. For example, I intentionally chose manual serial/model capture with proof photos instead of OCR because OCR would look impressive but would add size, offline complexity, and reliability risk in real walkthrough conditions.
+
+AI helped move faster, but the final scope, architecture, feature prioritization, QA decisions, and submission tradeoffs were guided by the product goal: a fast, offline-first mobile tool that an acquisition agent could actually use in a distressed-home walkthrough.

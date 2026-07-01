@@ -553,7 +553,7 @@ export function buildWorkbook(project, globalPrices, photos) {
         cell(row, 0, it.name,     rowStyle);
         cell(row, 1, it.unit,     rowStyle);
         cell(row, 2, it.unitCost, rowStyleR, '"$"#,##0.00');
-        cell(row, 3, it.qty,      rowStyleR);
+        cell(row, 3, it.qty,      rowStyleR, 'General');
         cell(row, 4, it.lineTotal,rowStyleR, '"$"#,##0');
         row++;
       }
@@ -726,6 +726,7 @@ export function buildWorkbook(project, globalPrices, photos) {
         ['Target Profit',         _n(analyzerInputs.targetProfit), '"$"#,##0'],
         ['Expected Profit',       deal.expectedProfit,             '"$"#,##0'],
         ['MAO',                   deal.mao,                        '"$"#,##0'],
+        ['Offer Gap (Offer − MAO)', _n(analyzerInputs.offerPrice) - deal.mao, '"$"#,##0'],
       ];
       for (const [label, value, fmt] of DA_ROWS) {
         wdCell(dRow, 0, label, lblS); wdCell(dRow, 1, value, valS, fmt); dRow++;

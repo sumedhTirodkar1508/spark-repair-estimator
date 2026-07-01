@@ -332,6 +332,44 @@ ul, ol {
 /* ------------------------------------------------------------------
    6. SECTION TABS (horizontal scroll)
    ------------------------------------------------------------------ */
+.section-tabs-wrapper {
+  position: relative;
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+}
+
+.section-tabs-wrapper::before,
+.section-tabs-wrapper::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.section-tabs-wrapper::before {
+  left: 0;
+  background: linear-gradient(to right, var(--color-surface) 10%, transparent);
+}
+
+.section-tabs-wrapper::after {
+  right: 0;
+  background: linear-gradient(to left, var(--color-surface) 10%, transparent);
+}
+
+.section-tabs-wrapper.can-scroll-left::before {
+  opacity: 1;
+}
+
+.section-tabs-wrapper.can-scroll-right::after {
+  opacity: 1;
+}
+
 .section-tabs {
   display: flex;
   gap: var(--sp-1);
@@ -339,8 +377,7 @@ ul, ol {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   padding: var(--sp-2) var(--sp-4);
-  background-color: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  width: 100%;
 }
 
 .section-tabs::-webkit-scrollbar {
@@ -2193,6 +2230,41 @@ ul, ol {
 /* Search bar */
 .pb-search-wrap {
   margin-bottom: var(--sp-4);
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.pb-search-input {
+  flex: 1;
+}
+
+.pb-changed-filter {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--sp-3);
+  height: var(--tap-min);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  background-color: var(--color-surface-2);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.pb-changed-filter:hover {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-2);
+}
+
+.pb-changed-filter.is-active {
+  background-color: var(--color-orange-bg);
+  color: var(--color-orange-light);
+  border-color: var(--color-orange-light);
 }
 
 /* Price list card */
@@ -3284,7 +3356,8 @@ ul, ol {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-4);
+  flex-wrap: wrap;
+  gap: var(--sp-3);
   padding: var(--sp-1) var(--sp-4) var(--sp-4);
 }
 
@@ -3473,6 +3546,69 @@ ul, ol {
 .an-status--pass  .an-status__label { color: var(--color-success); }
 .an-status--watch .an-status__label { color: var(--color-warning); }
 .an-status--fail  .an-status__label { color: var(--color-danger);  }
+
+/* ── Offer Gap / "What needs to change?" ─────────────────────
+   Actionable explanation shown under the PASS/WATCH/FAIL badge —
+   reuses the same status color language as .an-status above. */
+
+.an-offer-gap {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-md);
+}
+
+.an-offer-gap--pass {
+  background-color: var(--color-success-bg);
+  border: 1px solid var(--color-success);
+}
+
+.an-offer-gap--watch {
+  background-color: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+}
+
+.an-offer-gap--fail {
+  background-color: var(--color-danger-bg);
+  border: 1px solid var(--color-danger);
+}
+
+.an-offer-gap__title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.an-offer-gap__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  font-size: var(--text-sm);
+}
+
+.an-offer-gap__row-label {
+  color: var(--color-text-2);
+}
+
+.an-offer-gap__row-value {
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.an-offer-gap__text {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.an-offer-gap--pass  .an-offer-gap__text { color: var(--color-success); margin-top: 0; }
+.an-offer-gap--watch .an-offer-gap__text { color: var(--color-warning); }
+.an-offer-gap--fail  .an-offer-gap__text { color: var(--color-danger); }
 
 /* ── Footnote ─────────────────────────────────────────────── */
 

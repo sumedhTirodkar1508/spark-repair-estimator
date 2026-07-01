@@ -47,6 +47,7 @@ import {
 
 /** Current search/filter term */
 let _searchTerm = '';
+let _changedOnly = false;
 
 /** The pending diff result (set during import preview, cleared on apply/cancel) */
 let _pendingDiff = null;
@@ -126,7 +127,7 @@ function _renderContent(rootEl) {
         </button>
       </div>
 
-      ${/* Search */''}
+      ${/* Search and filters */''}
       <div class="pb-search-wrap">
         <input
           type="search"
@@ -139,6 +140,14 @@ function _renderContent(rootEl) {
           data-action="pb-search"
           aria-label="Search price items"
         />
+        <button
+          class="pb-changed-filter ${_changedOnly ? 'is-active' : ''}"
+          data-action="pb-toggle-changed"
+          aria-pressed="${_changedOnly}"
+          aria-label="Toggle changed only filter"
+        >
+          Changed Only
+        </button>
       </div>
 
       ${/* Price list */''}
@@ -182,6 +191,13 @@ function _priceListHtml(globalPrices) {
 
   // Filter items
   const filtered = CATALOG_ITEMS.filter(item => {
+    if (_changedOnly) {
+      const hasOverride = Object.prototype.hasOwnProperty.call(globalPrices, item.id);
+      if (!hasOverride || globalPrices[item.id] === item.defaultCost) {
+        return false;
+      }
+    }
+
     if (!term) return true;
     return (
       item.name.toLowerCase().includes(term) ||
@@ -190,6 +206,11 @@ function _priceListHtml(globalPrices) {
   });
 
   if (filtered.length === 0) {
+    if (_changedOnly && !term) {
+      return `<div class="pb-empty">No changed prices match this filter.</div>`;
+    } else if (_changedOnly && term) {
+      return `<div class="pb-empty">No changed prices match "${_esc(_searchTerm)}"</div>`;
+    }
     return `<div class="pb-empty">No items match "${_esc(_searchTerm)}"</div>`;
   }
 
@@ -481,6 +502,17 @@ async function _dispatch(action, el, rootEl, e) {
 
     case 'pb-reset-all': {
       await _handleResetAll(rootEl);
+      break;
+    }
+
+    case 'pb-toggle-changed': {
+      _changedOnly = !_changedOnly;
+      el.classList.toggle('is-active', _changedOnly);
+      el.setAttribute('aria-pressed', _changedOnly);
+      const listEl = rootEl.querySelector('#pb-list');
+      if (listEl) {
+        listEl.innerHTML = _priceListHtml(getGlobalPrices());
+      }
       break;
     }
 

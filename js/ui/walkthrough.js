@@ -357,6 +357,12 @@ function _renderWalkthrough(rootEl, project) {
   rootEl.addEventListener('input',   _wtInputHandler);
   rootEl.addEventListener('change',  _wtChangeHandler);
   rootEl.addEventListener('keydown', _wtKeydownHandler);
+  rootEl.addEventListener('scroll',  _wtScrollHandler, { capture: true, passive: true });
+
+  const tabsEl = rootEl.querySelector('.section-tabs');
+  if (tabsEl) {
+    requestAnimationFrame(() => _updateTabsFade(tabsEl));
+  }
 
   // Focus pending qty input from toggle
   if (_pendingFocusSelKey) {
@@ -403,6 +409,7 @@ function _cleanListeners(rootEl) {
   rootEl.removeEventListener('input',   _wtInputHandler);
   rootEl.removeEventListener('change',  _wtChangeHandler);
   rootEl.removeEventListener('keydown', _wtKeydownHandler);
+  rootEl.removeEventListener('scroll',  _wtScrollHandler, { capture: true, passive: true });
 }
 
 /* ============================================================
@@ -466,17 +473,19 @@ function _headerHtml(project, grandTotal, prog, pct) {
 
 function _sectionTabsHtml() {
   return `
-    <nav class="section-tabs" role="tablist" aria-label="Sections">
-      ${SECTIONS.map(s => `
-        <button
-          class="section-tab${s.id === _activeSectionId ? ' is-active' : ''}"
-          role="tab"
-          aria-selected="${s.id === _activeSectionId}"
-          data-action="wt-section-tab"
-          data-section="${s.id}"
-        >${_esc(s.label)}</button>
-      `).join('')}
-    </nav>
+    <div class="section-tabs-wrapper">
+      <nav class="section-tabs" role="tablist" aria-label="Sections">
+        ${SECTIONS.map(s => `
+          <button
+            class="section-tab${s.id === _activeSectionId ? ' is-active' : ''}"
+            role="tab"
+            aria-selected="${s.id === _activeSectionId}"
+            data-action="wt-section-tab"
+            data-section="${s.id}"
+          >${_esc(s.label)}</button>
+        `).join('')}
+      </nav>
+    </div>
   `;
 }
 
@@ -1269,6 +1278,32 @@ function _wtInputHandler(e) {
   }
 }
 
+function _wtScrollHandler(e) {
+  if (e.target && e.target.classList && e.target.classList.contains('section-tabs')) {
+    _updateTabsFade(e.target);
+  }
+}
+
+function _updateTabsFade(el) {
+  if (!el || !el.parentElement) return;
+  const maxScroll = el.scrollWidth - el.clientWidth;
+  if (maxScroll <= 0) {
+    el.parentElement.classList.remove('can-scroll-left', 'can-scroll-right');
+    return;
+  }
+  const left = Math.ceil(el.scrollLeft);
+
+  if (left <= 1) {
+    el.parentElement.classList.remove('can-scroll-left');
+    el.parentElement.classList.add('can-scroll-right');
+  } else if (left >= maxScroll - 1) {
+    el.parentElement.classList.add('can-scroll-left');
+    el.parentElement.classList.remove('can-scroll-right');
+  } else {
+    el.parentElement.classList.add('can-scroll-left', 'can-scroll-right');
+  }
+}
+
 function _wtKeydownHandler(e) {
   const el = e.target;
   if (el.dataset && el.dataset.action === 'wt-search-input' && e.key === 'Escape') {
@@ -1334,20 +1369,10 @@ async function _handleWtAction(action, el, e) {
     /* ------ Search: jump to a group or line item ------ */
     case 'wt-search-select': {
       const { instanceId, groupKey, itemId } = el.dataset;
-      const room = project.rooms.find(r => r.instanceId === instanceId);
-      const tmpl = room ? ROOM_TEMPLATES[room.roomType] : null;
-      if (!room || !tmpl) break;
-
-      const section = SECTIONS.find(s => s.id === tmpl.section);
-      _activeSectionId = tmpl.section;
-      if (section && section.multi) {
-        _activeSubTab.set(tmpl.section, instanceId);
-      }
-      _expandedGroups.add(`${instanceId}::${groupKey}`);
+      const ok = _jumpToTarget({ instanceId, groupKey, itemId: itemId || null });
+      if (!ok) break;
 
       _searchQuery = '';
-      _pendingScrollTarget = { instanceId, groupKey, itemId: itemId || null };
-
       _fullRerender();
       break;
     }
@@ -1891,6 +1916,75 @@ function _fullRerender() {
   if (!rootEl || !project) return;
   _cleanListeners(rootEl);
   _renderWalkthrough(rootEl, project);
+}
+
+/* ============================================================
+   Jump-to-target (shared by in-app search and external callers,
+   e.g. the Photo Gallery's "Go to Source" action)
+   ============================================================ */
+
+/**
+ * Point the walkthrough at a specific group/item: resolves the section +
+ * room sub-tab from the target's instanceId, expands the group, and queues
+ * a scroll+highlight for the next render. Pure state mutation — does NOT
+ * re-render; callers already on the walkthrough screen must call
+ * _fullRerender() afterward, callers navigating IN (e.g. from another route)
+ * should set the hash afterward and let the route's own render() pick it up.
+ *
+ * @param {{instanceId:string, groupKey:string, itemId?:string|null}} target
+ * @returns {boolean} true if the target resolved to a real room/group
+ */
+function _jumpToTarget({ instanceId, groupKey, itemId }) {
+  const project = getActiveProject();
+  if (!project || !instanceId || !groupKey) return false;
+
+  const room = project.rooms.find(r => r.instanceId === instanceId);
+  const tmpl = room ? ROOM_TEMPLATES[room.roomType] : null;
+  if (!room || !tmpl) return false;
+
+  const section = SECTIONS.find(s => s.id === tmpl.section);
+  _activeSectionId = tmpl.section;
+  if (section && section.multi) {
+    _activeSubTab.set(tmpl.section, instanceId);
+  }
+  _expandedGroups.add(`${instanceId}::${groupKey}`);
+  _pendingScrollTarget = { instanceId, groupKey, itemId: itemId || null };
+
+  return true;
+}
+
+/**
+ * Public entry point for other screens (e.g. gallery.js's "Go to Source")
+ * to point the walkthrough at a group/item BEFORE navigating there via
+ * window.location.hash. Since the walkthrough module keeps its section/
+ * sub-tab/expanded-group state at module scope for the lifetime of the
+ * page, setting it here and then changing the route lets the normal
+ * render() → _renderWalkthrough() flow pick it up and scroll/highlight
+ * automatically — no direct DOM access needed from the caller.
+ *
+ * Guards against the cold-entry edge case where the walkthrough has never
+ * rendered this project yet this session (e.g. the user opened the Gallery
+ * route directly): render()'s first-load branch would otherwise reset
+ * _activeSectionId/_activeSubTab/_expandedGroups right after we set them.
+ * Marking the project as already-initialized here (and kicking off the
+ * photo cache load ourselves) makes the jump work the same whether the
+ * walkthrough was already mounted or not.
+ *
+ * @param {{instanceId:string, groupKey:string, itemId?:string|null}} target
+ * @returns {boolean} true if the target resolved to a real room/group
+ */
+export function jumpToWalkthroughTarget(target) {
+  const ok = _jumpToTarget(target);
+  if (!ok) return false;
+
+  const project = getActiveProject();
+  if (project && _renderedProjectId !== project.id) {
+    _renderedProjectId        = project.id;
+    _renderedProjectUpdatedAt = project.updatedAt || null;
+    _loadPhotoCache(project.id);
+  }
+
+  return true;
 }
 
 /* ============================================================
