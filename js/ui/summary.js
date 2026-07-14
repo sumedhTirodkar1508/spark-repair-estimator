@@ -19,6 +19,7 @@ import {
   onChange,
   switchProject,
   reloadActiveProject,
+  flushSave,
   bulkMarkNonCriticalNone,
   getEffectiveStatus,
 } from '../state.js';
@@ -513,6 +514,13 @@ async function _doRestore(file) {
       });
       if (!confirmed) return;
 
+      // Settle any pending or already-in-flight save for the current project
+      // BEFORE the atomic restore transaction runs — otherwise that older
+      // save could resolve afterward and overwrite the freshly-restored
+      // record. reloadActiveProject() only cancels a pending debounce timer;
+      // it cannot cancel a save promise that has already started.
+      await flushSave();
+
       // Replace the CURRENT project record in place (keeps the same id so the
       // route stays valid), then reload the active project WITHOUT flushing the
       // stale in-memory copy back over the freshly-restored record.
@@ -526,6 +534,11 @@ async function _doRestore(file) {
       window.location.hash = `#/project/${current.id}`;
       toast('Backup restored into current project.', { type: 'success' });
     } else {
+      // Settle the current project's save chain before switching away, so
+      // its latest edits are fully persisted rather than possibly racing
+      // with the project switch below.
+      await flushSave();
+
       // Import as a brand-new project with a unique name.
       const newId = await backup.importBackup(parsed, { mode: 'copy' });
       await switchProject(newId);

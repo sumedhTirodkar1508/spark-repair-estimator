@@ -405,6 +405,29 @@ function _removePhotoFromCache(photoId, refKeyHint) {
 }
 
 /**
+ * Remove every cached photo bucket belonging to a room instance — mirrors
+ * db.js's deletePhotosByRoomInstance() matching rule exactly: a bucket keyed
+ * by the instanceId itself (room-scope photos), or by any key starting with
+ * "<instanceId>::" (group/item-scope photos within that room). Other rooms'
+ * buckets are untouched.
+ *
+ * Room deletion uses a batch IndexedDB helper rather than the normal single-
+ * photo add/replace/delete event flow, so _photoCache is never notified on
+ * its own — without this, a later room reusing the same instanceId (e.g.
+ * "bath_2") could display the deleted room's stale cached photos.
+ * @param {string} instanceId
+ */
+function _removeRoomPhotosFromCache(instanceId) {
+  const prefix = `${instanceId}::`;
+
+  for (const key of Array.from(_photoCache.keys())) {
+    if (key === instanceId || key.startsWith(prefix)) {
+      _photoCache.delete(key);
+    }
+  }
+}
+
+/**
  * Revoke all tracked object URLs from the previous render cycle.
  * Called at the start of each full render.
  */
@@ -1655,7 +1678,15 @@ async function _handleWtAction(action, el, e) {
         });
         try {
           await removeRoomInstance(instanceId);
+          // removeRoomInstance() awaits the IndexedDB-side photo cleanup, but
+          // room deletion goes through a batch db.js helper rather than the
+          // normal single-photo add/replace/delete event flow, so this
+          // module's own in-memory _photoCache is never notified. Invalidate
+          // it here so a later room reusing the same instanceId can never
+          // display the deleted room's cached photos.
+          _removeRoomPhotosFromCache(instanceId);
           _activeSubTab.set(_activeSectionId, remaining.length > 0 ? remaining[0].instanceId : null);
+          _fullRerender();
           toast('Room removed', { type: 'info' });
         } catch (err) {
           console.error('[walkthrough] removeRoomInstance error', err);

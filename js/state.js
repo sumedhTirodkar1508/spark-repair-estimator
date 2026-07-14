@@ -375,8 +375,16 @@ export async function renameProject(id, name) {
  * @returns {Promise<void>}
  */
 export async function deleteProject(id) {
-  // Drop (never flush) any pending debounced save targeting this project —
-  // otherwise the timer could fire after deletion and resurrect the record.
+  // Settle any pending or already-in-flight save first. If `id` is the
+  // active project, this legitimately persists its latest edits — but the
+  // record is deleted right after, so nothing written here can survive.
+  // (flushSave() chains onto an in-flight _persistProject via _flushPromise,
+  // so this also waits out a save that had already started, not just a
+  // pending debounce timer.)
+  await flushSave();
+
+  // Belt-and-braces: flushSave() already clears the pending debounce timer,
+  // but make sure no pending target lingers for the project we're deleting.
   if (_pendingSaveProject && _pendingSaveProject.id === id) {
     _cancelPendingSave();
   }
@@ -386,6 +394,12 @@ export async function deleteProject(id) {
   await dbDeleteProject(id);
 
   if (activeProject && activeProject.id === id) {
+    // Clear the active-project reference BEFORE activating/creating a
+    // replacement — otherwise createProject()'s own flushSave() call could
+    // write this now-deleted project back into IndexedDB.
+    activeProject = null;
+    localStorage.removeItem('spark.activeProjectId');
+
     // Pick a replacement
     const remaining = await getAllProjects();
     if (remaining.length > 0) {
@@ -394,7 +408,8 @@ export async function deleteProject(id) {
       localStorage.setItem('spark.activeProjectId', activeProject.id);
       emit();
     } else {
-      // No projects remain — create a fresh one
+      // No projects remain — create a fresh one. activeProject is already
+      // null here, so createProject()'s internal flushSave() is a no-op.
       await createProject('My First Walkthrough');
       // createProject sets activeProject + emits
     }

@@ -4,7 +4,7 @@
  * Update CACHE_NAME when any precached file changes.
  */
 
-const CACHE_NAME = 'spark-cache-v22';
+const CACHE_NAME = 'spark-cache-v23';
 
 /**
  * Complete list of files to precache.

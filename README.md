@@ -21,8 +21,8 @@ https://spark-repair-estimator-sumedh.vercel.app/#/dashboard
 This submission includes:
 
 - Live deployed static app: https://spark-repair-estimator-sumedh.vercel.app/#/dashboard
-- GitHub repository with all source/static files
-- One-page PDF writeup covering the required submission prompts
+- Public GitHub repository: https://github.com/sumedhTirodkar1508/spark-repair-estimator
+- One-page PDF writeup covering the required submission prompts attached to the submission email
 
 The app has no build step, backend, login, API server, database server, or dependency installation requirement.
 
@@ -282,11 +282,13 @@ No data is sent to a server by the app.
 ## Project Structure
 
 ```txt
+README.md
 index.html
 styles.css
 manifest.webmanifest
 service-worker.js
 app.js
+docs/
 assets/
 vendor/
 js/
@@ -614,6 +616,8 @@ It handles:
 - target profit
 - live results
 - neutral empty state before required inputs are entered
+- actionable Offer Gap guidance
+- required offer reduction or profit cushion
 
 ### `js/ui/components.js`
 
@@ -627,7 +631,7 @@ It provides:
 - toast
 - progress bar
 - quantity chips
-- shared formatting helpers
+- HTML-safe shared UI rendering utilities
 
 ### `js/ui/gallery.js`
 
