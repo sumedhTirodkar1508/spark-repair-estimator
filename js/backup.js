@@ -1,8 +1,8 @@
 /**
- * js/backup.js — Phase 8 (Agent E)
+ * js/backup.js
  * Backup ZIP export/import with duplicate-ID handling.
  *
- * Named exports (frozen contract §27):
+ * Named exports:
  *   exportBackupZip(projectId) -> Promise<void>
  *   readBackupZip(file)        -> Promise<{meta, project, photos:[{record, blob}]}>
  *   importBackup(parsed, mode) -> Promise<string>   mode: 'replace' | 'copy'
@@ -16,7 +16,7 @@
  * creating a transient anchor for download.
  */
 
-import { getProject, getAllProjects, putProject, putPhoto, getPhotosByProject, deletePhotosByProject } from './db.js';
+import { getProject, getAllProjects, getPhotosByProject, putProjectWithPhotosAtomic } from './db.js';
 import { makeThumbnail } from './photos.js';
 
 // ============================================================================
@@ -146,11 +146,11 @@ function _uniqueRestoredName(baseName, existingLower) {
 /**
  * Export a full backup ZIP for a project.
  *
- * ZIP structure (§16):
+ * ZIP structure:
  *   project.json  — project record (WITHOUT blob fields) + photoIndex
  *   photos/<photoId>.jpg  — full-res blobs only (thumbnails regenerated on import)
  *
- * project.json schema (§17):
+ * project.json schema:
  * {
  *   schemaVersion: 1,
  *   appVersion: "1.0.0",
@@ -186,7 +186,7 @@ export async function exportBackupZip(projectId) {
   }));
 
   // 4. Build project record stripped of any embedded blob fields
-  //    (project record §7 does not normally contain blobs, but strip defensively)
+  //    (project records do not normally contain blobs, but strip defensively)
   const projectRecord = _stripBlobs(project);
 
   // 5. Assemble project.json payload
@@ -332,7 +332,7 @@ export async function importBackup(parsed, modeOrOpts) {
   let targetProjectId;
   let targetProject;
   let regenPhotoIds;          // true → assign fresh photo ids
-  let purgeTargetPhotos;      // true → deletePhotosByProject(targetProjectId) first
+  let purgeTargetPhotos;      // true → delete the target's existing photos in the same atomic transaction
 
   if (mode === 'copy') {
     const existingLower = new Set(
@@ -385,23 +385,20 @@ export async function importBackup(parsed, modeOrOpts) {
     purgeTargetPhotos = true;
   }
 
-  // Persist the project record
-  await putProject(targetProject);
-
-  // Purge stale photos for the target before writing restored ones so old blobs
-  // cannot linger in the Photo Manifest or export ZIP.
-  if (purgeTargetPhotos) {
-    await deletePhotosByProject(targetProjectId);
-  }
-
-  // Re-generate thumbnails and persist each photo
+  // Prepare every photo record — including thumbnail generation — entirely
+  // in memory before touching IndexedDB. Nothing below this point is allowed
+  // to mutate the database; if any of this preparation throws, the existing
+  // stored project/photos are completely untouched.
   const ts = Date.now();
+  const photoRecords = [];
   for (let i = 0; i < photos.length; i++) {
     const { record, blob } = photos[i];
 
     const photoId = regenPhotoIds ? `ph_${ts}_${i}` : record.id;
 
-    // Generate thumbnail from the full-res blob
+    // Generate thumbnail from the full-res blob. Fall back to the full blob
+    // as the thumbnail if generation fails for an individual valid image —
+    // same policy as normal capture (photos.js capturePhoto).
     let thumbBlob;
     try {
       thumbBlob = await makeThumbnail(blob);
@@ -410,7 +407,7 @@ export async function importBackup(parsed, modeOrOpts) {
       thumbBlob = blob;
     }
 
-    const photoRecord = {
+    photoRecords.push({
       id:        photoId,
       projectId: targetProjectId,
       scope:     record.scope    || 'item',
@@ -422,10 +419,16 @@ export async function importBackup(parsed, modeOrOpts) {
       h:         record.h        || 0,
       bytes:     record.bytes    || blob.size,
       createdAt: record.createdAt || new Date().toISOString(),
-    };
-
-    await putPhoto(photoRecord);
+    });
   }
+
+  // Single atomic transaction: purge stale target photos (if required), put
+  // the project record, and put every prepared photo record together. If
+  // anything fails mid-transaction, it aborts and the previously stored
+  // project/photos are left exactly as they were — no partial restore.
+  await putProjectWithPhotosAtomic(targetProject, photoRecords, {
+    deletePhotosForProjectId: purgeTargetPhotos ? targetProjectId : null,
+  });
 
   return targetProjectId;
 }

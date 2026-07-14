@@ -4,13 +4,14 @@
  *
  * Named exports: navigate(hash), triggerInstallPrompt(), isInstallAvailable(), isStandalone(), isIosSafariForInstall()
  *
- * Routes (contract §28):
+ * Routes:
  *   #/            → dashboard
  *   #/dashboard   → dashboard
  *   #/project/:id → walkthrough
- *   #/project/:id/summary  → summary  (stub)
- *   #/project/:id/analyzer → analyzer (stub)
- *   #/pricebook   → price book        (stub)
+ *   #/project/:id/summary  → summary
+ *   #/project/:id/analyzer → analyzer
+ *   #/project/:id/gallery  → photo gallery
+ *   #/pricebook   → price book
  */
 
 import { initState, getActiveProject, onChange, flushSave } from './js/state.js';
@@ -33,7 +34,7 @@ async function registerServiceWorker() {
     );
     console.log('[App] SW registered, scope:', _swRegistration.scope);
 
-    // Listen for the SW_UPDATED message from the new service worker (§6 plan).
+    // Listen for the SW_UPDATED message from the new service worker.
     navigator.serviceWorker.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'SW_UPDATED') {
         _showUpdateToast(event.data.version);
@@ -195,7 +196,7 @@ async function handleRoute(hash) {
   const rootEl = document.getElementById('app');
   if (!rootEl) return;
 
-  // Save last route (§19).
+  // Save last route so a fresh launch resumes here.
   try { localStorage.setItem(LAST_ROUTE_KEY, hash || '#/'); } catch (_) {}
 
   _currentRouteName = route.name;
@@ -223,8 +224,9 @@ async function handleRoute(hash) {
       try {
         const { render: renderSummary } = await import('./js/ui/summary.js');
         await renderSummary(rootEl, route.params);
-      } catch (_err) {
-        _renderComingSoon(rootEl, 'Review & Export', route.params.id);
+      } catch (err) {
+        console.error('[App] summary.render error', err);
+        _renderErrorPlaceholder(rootEl, 'Review & Export', err.message, route.params.id);
       }
       break;
 
@@ -232,8 +234,9 @@ async function handleRoute(hash) {
       try {
         const { render: renderAnalyzer } = await import('./js/ui/analyzer.js');
         await renderAnalyzer(rootEl, route.params);
-      } catch (_err) {
-        _renderComingSoon(rootEl, 'Deal Analyzer', route.params.id);
+      } catch (err) {
+        console.error('[App] analyzer.render error', err);
+        _renderErrorPlaceholder(rootEl, 'Deal Analyzer', err.message, route.params.id);
       }
       break;
 
@@ -241,8 +244,9 @@ async function handleRoute(hash) {
       try {
         const { render: renderGallery } = await import('./js/ui/gallery.js');
         await renderGallery(rootEl, route.params);
-      } catch (_err) {
-        _renderComingSoon(rootEl, 'Photo Gallery', route.params.id);
+      } catch (err) {
+        console.error('[App] gallery.render error', err);
+        _renderErrorPlaceholder(rootEl, 'Photo Gallery', err.message, route.params.id);
       }
       break;
 
@@ -250,8 +254,9 @@ async function handleRoute(hash) {
       try {
         const { render: renderPriceBook } = await import('./js/ui/priceBook.js');
         await renderPriceBook(rootEl, route.params);
-      } catch (_err) {
-        _renderComingSoon(rootEl, 'Price Book', null);
+      } catch (err) {
+        console.error('[App] priceBook.render error', err);
+        _renderErrorPlaceholder(rootEl, 'Price Book', err.message, null);
       }
       break;
 
@@ -265,28 +270,31 @@ async function handleRoute(hash) {
   }
 }
 
-function _renderComingSoon(rootEl, label, projectId) {
-  const backHref = projectId ? `#/project/${projectId}` : '#/dashboard';
-  rootEl.innerHTML = `
-    <div class="route-placeholder">
-      <div class="route-placeholder__label">${label}</div>
-      <div class="route-placeholder__sub">Coming in a later build phase</div>
-      <div style="margin-top:var(--sp-4)">
-        <a href="${backHref}" style="color:var(--color-orange-light);font-size:0.875rem">
-          ← Back
-        </a>
-      </div>
-    </div>
-  `;
+/**
+ * Escape text for safe HTML interpolation. Error messages can originate from
+ * thrown Error objects anywhere downstream (including user-influenced data),
+ * so this must run before any error text is inserted via innerHTML.
+ * @param {string} str
+ * @returns {string}
+ */
+function _esc(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-function _renderErrorPlaceholder(rootEl, label, msg) {
+function _renderErrorPlaceholder(rootEl, label, msg, projectId) {
+  const backHref = projectId ? `#/project/${projectId}` : '#/dashboard';
+  const backLabel = projectId ? '← Back' : '← Dashboard';
   rootEl.innerHTML = `
     <div class="route-placeholder">
-      <div class="route-placeholder__label">Error loading ${label}</div>
-      <div class="route-placeholder__sub" style="color:var(--color-danger)">${msg || ''}</div>
+      <div class="route-placeholder__label">Error loading ${_esc(label)}</div>
+      <div class="route-placeholder__sub" style="color:var(--color-danger)">${_esc(msg)}</div>
       <div style="margin-top:var(--sp-4)">
-        <a href="#/dashboard" style="color:var(--color-orange-light);font-size:0.875rem">← Dashboard</a>
+        <a href="${backHref}" style="color:var(--color-orange-light);font-size:0.875rem">${backLabel}</a>
       </div>
     </div>
   `;
@@ -465,7 +473,7 @@ async function boot() {
         <div class="empty-state">
           <div class="empty-state__icon">⚠️</div>
           <p class="empty-state__title">Storage error</p>
-          <p class="empty-state__desc">Could not open IndexedDB: ${err.message}</p>
+          <p class="empty-state__desc">Could not open IndexedDB: ${_esc(err.message)}</p>
           <p class="empty-state__desc" style="margin-top:var(--sp-2)">
             Try reloading the page or clearing site data in browser settings.
           </p>

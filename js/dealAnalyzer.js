@@ -1,9 +1,10 @@
 /**
- * js/dealAnalyzer.js — Phase 8 (Agent E)
+ * js/dealAnalyzer.js
  * Pure deal math — no DOM, no state reads or writes, no db.
  *
- * Named exports (frozen contract §25):
+ * Named exports:
  *   WATCH_RATIO          {number}  0.6
+ *   isDealReady(inputs)  -> boolean
  *   computeDeal(inputs, repairTotal) -> {repairTotal, sellingCosts, holding,
  *                                        expectedProfit, mao, status}
  *
@@ -18,13 +19,33 @@
 export const WATCH_RATIO = 0.6;
 
 // ============================================================================
+// isDealReady
+// ============================================================================
+
+/**
+ * Single source of truth for "is there enough input to show a deal verdict."
+ * Ready only when ARV, offer/purchase price, and target profit are all
+ * present and strictly positive — blank, undefined, null, NaN, zero, and
+ * negative values never count as ready. Used identically by the UI (to show
+ * a PASS/WATCH/FAIL badge) and by the Excel exporter (to decide whether to
+ * emit a verdict/MAO/Offer Gap row), so the two can never disagree.
+ *
+ * @param {{ arv?:number, offerPrice?:number, targetProfit?:number }} inputs
+ * @returns {boolean}
+ */
+export function isDealReady(inputs) {
+  const inp = inputs || {};
+  return Number(inp.arv) > 0 && Number(inp.offerPrice) > 0 && Number(inp.targetProfit) > 0;
+}
+
+// ============================================================================
 // computeDeal
 // ============================================================================
 
 /**
  * Compute the deal analysis for a real-estate acquisition.
  *
- * Formulas (contract §25):
+ * Formulas:
  *   sellingCosts    = arv * sellingPct / 100
  *   holding         = holdingMonths * monthlyHolding
  *   expectedProfit  = arv - offerPrice - repairTotal - closingCosts - sellingCosts - holding

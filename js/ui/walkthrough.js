@@ -1,5 +1,5 @@
 /**
- * js/ui/walkthrough.js — Phase 4 (Agent A)
+ * js/ui/walkthrough.js
  * Section tabs, room sub-tabs (multi), group cards (tri-state),
  * line items, qty chips, running total header, progress bar.
  *
@@ -119,7 +119,7 @@ let _unsubscribe = null;
 let _unsubscribePhotos = null;
 
 /* ============================================================
-   Photo cache (Agent B)
+   Photo cache
    Maps refKey → photoRecord[] for the active project.
    Populated async when the project loads/switches; used synchronously
    during render so thumbnails show without waiting for IDB.
@@ -131,6 +131,23 @@ const _photoCache = new Map();
 
 /** @type {string[]}  Object URLs created during last render — revoked on next render */
 let _photoURLs = [];
+
+/**
+ * True when a photo add/replace/delete happened while some other route was
+ * visible (or while an input had focus), so _photoCache may no longer match
+ * IndexedDB. Cleared only after a fresh load for the correct project
+ * succeeds. render() checks this and reloads before presenting the page, so
+ * returning to the Walkthrough never flashes stale thumbnails.
+ */
+let _photoCacheDirty = false;
+
+/**
+ * Monotonic counter identifying the most recently STARTED full-cache load.
+ * Each async load captures its own value and, on resolution, only applies
+ * its results if it's still the latest — otherwise a slower-resolving older
+ * request could overwrite the results of a newer one.
+ */
+let _photoCacheGen = 0;
 
 /* ============================================================
    Entry point
@@ -163,6 +180,7 @@ export async function render(rootEl, params) {
   }
 
   // Reset section/expansion state when switching projects
+  let needsPhotoReload = false;
   if (_renderedProjectId !== project.id) {
     _activeSectionId = SECTIONS[0].id;
     _activeSubTab.clear();
@@ -170,8 +188,8 @@ export async function render(rootEl, params) {
     _searchQuery = '';
     _renderedProjectId = project.id;
     _renderedProjectUpdatedAt = project.updatedAt || null;
-    // Load photo cache for the new project (async; re-render when done)
-    _loadPhotoCache(project.id);
+    _photoCache.clear();
+    needsPhotoReload = true;
   } else if (project.updatedAt && project.updatedAt !== _renderedProjectUpdatedAt) {
     // Same project ID but updatedAt changed — happens after a backup Replace.
     // Revoke stale Object URLs and reload photos from IndexedDB.
@@ -179,7 +197,12 @@ export async function render(rootEl, params) {
     for (const url of _photoURLs) { try { URL.revokeObjectURL(url); } catch (_) {} }
     _photoURLs = [];
     _photoCache.clear();
-    _loadPhotoCache(project.id);
+    needsPhotoReload = true;
+  } else if (_photoCacheDirty) {
+    // A photo changed elsewhere (e.g. Gallery) while this route wasn't
+    // visible — reload before presenting the page so we never flash stale
+    // thumbnails that then have to be corrected by a second render.
+    needsPhotoReload = true;
   }
 
   // Subscribe to state changes (idempotent)
@@ -190,12 +213,28 @@ export async function render(rootEl, params) {
     _unsubscribePhotos = onPhotosChanged(_onPhotosChanged);
   }
 
+  if (needsPhotoReload) {
+    await _fetchPhotosForProject(project.id);
+  }
+
   _renderWalkthrough(rootEl, project);
 }
 
 /* ============================================================
    onChange subscription handler
    ============================================================ */
+
+/**
+ * True only for the exact base walkthrough route "#/project/<id>" — false for
+ * summary, analyzer, gallery, or any other sub-route. Used to guard every
+ * async/subscription path that can trigger a full walkthrough re-render, so
+ * a delayed callback can never repaint the walkthrough over another screen
+ * whose URL still starts with "#/project/".
+ * @returns {boolean}
+ */
+function _isBaseWalkthroughRoute() {
+  return /^#\/project\/[^/]+$/.test(window.location.hash);
+}
 
 function _onStateChange() {
   // Skip if qty/note/serial input is active (in-place or suppressed update already ran)
@@ -207,12 +246,7 @@ function _onStateChange() {
   }
 
   // Only re-render if walkthrough is the visible route
-  const hash = window.location.hash;
-  if (
-    hash.startsWith('#/project/') &&
-    !hash.includes('/summary') &&
-    !hash.includes('/analyzer')
-  ) {
+  if (_isBaseWalkthroughRoute()) {
     const project = getActiveProject();
     const rootEl  = document.getElementById('app');
     if (rootEl && project) {
@@ -223,74 +257,151 @@ function _onStateChange() {
 }
 
 /**
- * Fires when a photo is deleted from anywhere in the app (e.g. the Photo
- * Gallery screen). Reloads the photo cache from IndexedDB and re-renders so
- * inline photo slots reflect the deletion immediately — no page reload.
+ * Fires on every photo add/replace/delete from anywhere in the app
+ * (Walkthrough's own capture/delete actions, or the Photo Gallery screen).
+ *
+ * - Events for a different project are ignored outright.
+ * - If the base Walkthrough route isn't visible right now (Summary,
+ *   Analyzer, Gallery, Dashboard, Price Book, …), the DOM is never touched —
+ *   we only mark the cache dirty so the next render() reloads it first.
+ * - If an input is mid-edit, do the same: defer to the next render instead
+ *   of stealing focus.
+ * - Otherwise, apply the change directly (upsert for add/replace, removal
+ *   for delete — both idempotent) and do one guaranteed repaint. Unknown/
+ *   batch events fall back to a full reload from IndexedDB.
+ *
+ * @param {{type?:string, projectId?:string, photoId?:string, refKey?:string, photo?:object|null}} [event]
  */
-function _onPhotosChanged() {
-  if (_suppressRerender) return;
-  const active = document.activeElement;
-  if (active) {
-    const act = active.dataset && active.dataset.action;
-    if (act === 'wt-qty-input' || act === 'wt-note-input' || act === 'wt-serial-field' || act === 'wt-search-input') return;
+function _onPhotosChanged(event) {
+  const eventProjectId = event && event.projectId;
+  const active = getActiveProject();
+  if (eventProjectId && active && eventProjectId !== active.id) return;
+
+  if (!_isBaseWalkthroughRoute()) {
+    _photoCacheDirty = true;
+    return;
   }
 
-  const hash = window.location.hash;
-  if (
-    hash.startsWith('#/project/') &&
-    !hash.includes('/summary') &&
-    !hash.includes('/analyzer')
-  ) {
-    const project = getActiveProject();
-    if (project) _loadPhotoCache(project.id); // reloads cache then triggers _fullRerender()
+  if (_suppressRerender) {
+    _photoCacheDirty = true;
+    return;
   }
+  const activeEl = document.activeElement;
+  if (activeEl) {
+    const act = activeEl.dataset && activeEl.dataset.action;
+    if (act === 'wt-qty-input' || act === 'wt-note-input' || act === 'wt-serial-field' || act === 'wt-search-input') {
+      _photoCacheDirty = true;
+      return;
+    }
+  }
+
+  if (!active) return;
+
+  if (event && event.type === 'delete' && event.photoId) {
+    _removePhotoFromCache(event.photoId, event.refKey);
+    _fullRerender();
+    return;
+  }
+
+  if (event && (event.type === 'add' || event.type === 'replace') && event.photo) {
+    _upsertPhotoInCache(event.photo);
+    _fullRerender();
+    return;
+  }
+
+  // Unknown shape, or a batch event with no per-photo payload — reload
+  // everything for this project from IndexedDB.
+  _loadPhotoCache(active.id);
 }
 
 /* ============================================================
-   Photo cache helpers (Agent B)
+   Photo cache helpers
    ============================================================ */
 
 /**
- * Populate _photoCache from IndexedDB for the given project.
- * Groups records by refKey. Triggers a full re-render once loaded.
+ * Populate _photoCache from IndexedDB for the given project. Guards against
+ * two kinds of staleness: a newer load having since started (generation
+ * token), and the active project having changed while this read was in
+ * flight (project-id check). Does NOT render — callers decide when to.
+ * Clears _photoCacheDirty on success.
+ * @param {string} projectId
+ * @returns {Promise<boolean>} true if the cache was actually updated
+ */
+async function _fetchPhotosForProject(projectId) {
+  const gen = ++_photoCacheGen;
+  let photos;
+  try {
+    photos = await getPhotos(projectId);
+  } catch (err) {
+    console.error('[walkthrough] _fetchPhotosForProject error', err);
+    return false;
+  }
+
+  // A newer load has since started — its result should win, not this one.
+  if (gen !== _photoCacheGen) return false;
+
+  const current = getActiveProject();
+  if (!current || current.id !== projectId) return false;
+
+  _photoCache.clear();
+  for (const ph of photos) {
+    if (!_photoCache.has(ph.refKey)) _photoCache.set(ph.refKey, []);
+    _photoCache.get(ph.refKey).push(ph);
+  }
+  _photoCacheDirty = false;
+  return true;
+}
+
+/**
+ * Reload the full photo cache for a project and re-render once done —
+ * used by async paths (subscription-triggered reloads, cold-entry jumps)
+ * that need to repaint themselves once fresh data lands.
  * @param {string} projectId
  */
 async function _loadPhotoCache(projectId) {
-  try {
-    const photos = await getPhotos(projectId);
-    _photoCache.clear();
-    for (const ph of photos) {
-      if (!_photoCache.has(ph.refKey)) _photoCache.set(ph.refKey, []);
-      _photoCache.get(ph.refKey).push(ph);
-    }
-  } catch (err) {
-    console.error('[walkthrough] _loadPhotoCache error', err);
-  }
-  // Re-render with fresh cache (suppress if not on walkthrough route)
-  const hash = window.location.hash;
-  if (
-    hash.startsWith('#/project/') &&
-    !hash.includes('/summary') &&
-    !hash.includes('/analyzer')
-  ) {
+  const ok = await _fetchPhotosForProject(projectId);
+  if (ok && _isBaseWalkthroughRoute()) {
     _fullRerender();
   }
 }
 
 /**
- * Refresh the photo cache for a single refKey, then update
- * the relevant DOM slots in-place (or fall back to full re-render).
- * @param {string} projectId
- * @param {string} refKey
+ * Insert or update a single photo record in _photoCache, keyed by the
+ * record's OWN refKey (never a caller-supplied string) and de-duplicated by
+ * id. Safe to call more than once for the same photo — idempotent — so it
+ * can be called both directly at a capture/replace call site and again from
+ * the onPhotosChanged subscription without producing duplicate thumbnails.
+ * @param {object} photo
  */
-async function _refreshPhotoSlotInCache(projectId, refKey) {
-  try {
-    const photos = await getPhotos(projectId, { refKey });
-    _photoCache.set(refKey, photos);
-  } catch (err) {
-    console.error('[walkthrough] _refreshPhotoSlotInCache error', err);
+function _upsertPhotoInCache(photo) {
+  if (!photo || !photo.id || photo.refKey === undefined) return;
+  const list = _photoCache.get(photo.refKey) || [];
+  const idx  = list.findIndex(p => p.id === photo.id);
+  if (idx === -1) {
+    list.push(photo);
+  } else {
+    list[idx] = photo;
   }
-  _fullRerender();
+  _photoCache.set(photo.refKey, list);
+}
+
+/**
+ * Remove a single photo record from _photoCache by id. If refKeyHint is
+ * known, only that bucket is scanned; otherwise every bucket is checked.
+ * @param {string} photoId
+ * @param {string} [refKeyHint]
+ */
+function _removePhotoFromCache(photoId, refKeyHint) {
+  if (refKeyHint !== undefined && _photoCache.has(refKeyHint)) {
+    _photoCache.set(refKeyHint, _photoCache.get(refKeyHint).filter(p => p.id !== photoId));
+    return;
+  }
+  for (const [key, list] of _photoCache) {
+    if (list.some(p => p.id === photoId)) {
+      _photoCache.set(key, list.filter(p => p.id !== photoId));
+      return;
+    }
+  }
 }
 
 /**
@@ -962,7 +1073,7 @@ function _addItemRowHtml(groupKey) {
 }
 
 /* ============================================================
-   Serial Slot HTML (Agent B)
+   Serial Slot HTML
    ============================================================ */
 
 /**
@@ -1104,7 +1215,7 @@ function _serialSlotHtml(selKey, instanceId, itemId, project) {
 }
 
 /* ============================================================
-   Photo Slot HTML (Agent B)
+   Photo Slot HTML
    ============================================================ */
 
 /**
@@ -1542,8 +1653,14 @@ async function _handleWtAction(action, el, e) {
           const tmpl = ROOM_TEMPLATES[r.roomType];
           return tmpl && tmpl.section === _activeSectionId && r.instanceId !== instanceId;
         });
-        removeRoomInstance(instanceId);
-        _activeSubTab.set(_activeSectionId, remaining.length > 0 ? remaining[0].instanceId : null);
+        try {
+          await removeRoomInstance(instanceId);
+          _activeSubTab.set(_activeSectionId, remaining.length > 0 ? remaining[0].instanceId : null);
+          toast('Room removed', { type: 'info' });
+        } catch (err) {
+          console.error('[walkthrough] removeRoomInstance error', err);
+          toast('Could not fully remove room photos', { type: 'error' });
+        }
       }
       break;
     }
@@ -1689,8 +1806,13 @@ async function _handleWtAction(action, el, e) {
         danger: true,
       });
       if (!ok) break;
-      deleteItem(itemId);
-      toast('Item deleted', { type: 'info' });
+      try {
+        await deleteItem(itemId);
+        toast('Item deleted', { type: 'info' });
+      } catch (err) {
+        console.error('[walkthrough] deleteItem error', err);
+        toast('Could not delete item', { type: 'error' });
+      }
       break;
     }
 
@@ -1814,10 +1936,13 @@ async function _handleWtAction(action, el, e) {
       try {
         const record = await capturePhoto({ scope, refKey, kind });
         if (!record) break; // user cancelled
-        // Update cache and re-render
-        if (!_photoCache.has(refKey)) _photoCache.set(refKey, []);
-        _photoCache.get(refKey).push(record);
-        await _refreshPhotoSlotInCache(project.id, refKey);
+        // Upsert directly from the returned record (its own refKey is the
+        // source of truth) and repaint immediately — do not wait on the
+        // onPhotosChanged round trip, and don't show the toast until this
+        // is done. addPhoto() also emits onPhotosChanged; _upsertPhotoInCache
+        // is idempotent by photo id, so that second application is a no-op.
+        _upsertPhotoInCache(record);
+        _fullRerender();
         toast('Photo added', { type: 'success' });
       } catch (err) {
         console.error('[walkthrough] add photo error', err);
@@ -1840,11 +1965,8 @@ async function _handleWtAction(action, el, e) {
       if (!ok) break;
       try {
         await photosDeletePhoto(photoId);
-        // Remove from cache
-        if (refKey && _photoCache.has(refKey)) {
-          _photoCache.set(refKey, _photoCache.get(refKey).filter(p => p.id !== photoId));
-        }
-        await _refreshPhotoSlotInCache(project.id, refKey || '');
+        _removePhotoFromCache(photoId, refKey);
+        _fullRerender();
         toast('Photo deleted', { type: 'info' });
       } catch (err) {
         console.error('[walkthrough] delete photo error', err);

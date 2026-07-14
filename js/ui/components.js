@@ -1,12 +1,11 @@
 /**
- * js/ui/components.js — Phase 4 (Agent A)
+ * js/ui/components.js
  * Shared UI primitives: modal, bottom-sheet, confirm, toast, progress bar, chips.
  *
- * Named exports match frozen contract exactly. No default export.
  * All overlays mount into #modal-root / #sheet-root / #toast-root so view
  * re-renders never clobber open dialogs.
  *
- * Signature notes (contract-level, compatible with stubs but expanded per spec):
+ * Signatures:
  *   showModal({title, placeholder, value, confirmText}) -> Promise<string|null>
  *   showSheet({title, html, actions}) -> Promise<any>
  *   confirm({title, message, confirmText, danger}) -> Promise<boolean>

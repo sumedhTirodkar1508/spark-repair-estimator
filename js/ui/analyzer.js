@@ -1,11 +1,11 @@
 /**
- * js/ui/analyzer.js — Phase 8 (Agent E)
+ * js/ui/analyzer.js
  * Deal Analyzer screen: ARV/MAO math, live results, PASS/WATCH/FAIL badge.
  *
  * Named export: render(rootEl, params)
  * No default export. Vanilla ESM.
  *
- * Live-update strategy (§E rules):
+ * Live-update strategy:
  *   - On input events, call setAnalyzer({field: value}) which triggers onChange.
  *   - onChange handler ONLY updates the results region (#an-results) in place —
  *     it does NOT re-render the entire screen, preserving input focus.
@@ -25,7 +25,7 @@ import {
 } from '../state.js';
 
 import { computeGrandTotal, formatMoney } from '../pricing.js';
-import { computeDeal } from '../dealAnalyzer.js';
+import { computeDeal, isDealReady } from '../dealAnalyzer.js';
 
 // ============================================================================
 // Module-level state
@@ -157,7 +157,7 @@ function _renderFull(rootEl, project, globalPrices) {
 
         <!-- ── Results (updated in-place on input) ──────────────────────── -->
         <section class="an-section" id="an-results">
-          ${_resultsHtml(deal, _isReady(inputs), inputs)}
+          ${_resultsHtml(deal, isDealReady(inputs), inputs)}
         </section>
 
         <p class="an-footnote">
@@ -185,7 +185,7 @@ function _updateResults(rootEl, project, globalPrices) {
   const rtEl = rootEl.querySelector('.an-repair-total__value');
   if (rtEl) rtEl.textContent = formatMoney(repairTotal);
 
-  resultsEl.innerHTML = _resultsHtml(deal, _isReady(inputs), inputs);
+  resultsEl.innerHTML = _resultsHtml(deal, isDealReady(inputs), inputs);
 }
 
 // ============================================================================
@@ -309,15 +309,6 @@ function _offerGapHtml(deal, inputs) {
 function _num(v) {
   const n = Number(v);
   return isFinite(n) ? n : 0;
-}
-
-/**
- * Minimum inputs required before showing a PASS/WATCH/FAIL verdict.
- * ARV, offer price, and target profit must all be present and positive.
- */
-function _isReady(inputs) {
-  const n = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v));
-  return n(inputs.arv) > 0 && n(inputs.offerPrice) > 0 && n(inputs.targetProfit) > 0;
 }
 
 function _statusLabel(status) {

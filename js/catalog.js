@@ -1,17 +1,15 @@
 /**
- * js/catalog.js — Phase 1
- * Owner: F2 agent
+ * js/catalog.js
  * Contains: CATALOG_ITEMS (108), GROUPS (37), ROOM_TEMPLATES (7), SECTIONS (7),
  *           SERIAL_ITEM_IDS, REQUIRED_GROUP_KEYS, CRITICAL_GROUP_KEYS,
  *           quantity chip presets, helpers, and dev-only __coverageReport().
  *
  * Vanilla ESM. Named exports only. No DOM, no IndexedDB, no localStorage.
- * Source: frozen contract §4–6 + official Pricing List.csv.
- * sum-1 (Test Name) excluded — final count: 108 items.
+ * Source: official Pricing List.csv. sum-1 (Test Name) excluded — final count: 108 items.
  */
 
 // ---------------------------------------------------------------------------
-// §4  CATALOG_ITEMS
+// CATALOG_ITEMS
 // CSV columns: id, name, cost, unit  (RFC-4180 quoting; "" → " inside quotes)
 // defaultCost = cost (number, decimals preserved exactly)
 // name/unit = exact CSV strings after unescaping doubled quotes
@@ -139,7 +137,7 @@ export const CATALOG_ITEMS = [
 ];
 
 // ---------------------------------------------------------------------------
-// §6  REQUIRED_GROUP_KEYS (19)
+// REQUIRED_GROUP_KEYS (19)
 // ---------------------------------------------------------------------------
 /** @type {string[]} */
 export const REQUIRED_GROUP_KEYS = [
@@ -167,7 +165,7 @@ export const REQUIRED_GROUP_KEYS = [
 const _requiredSet = new Set(REQUIRED_GROUP_KEYS);
 
 // ---------------------------------------------------------------------------
-// §5  CRITICAL_GROUP_KEYS (9)
+// CRITICAL_GROUP_KEYS (9)
 // ---------------------------------------------------------------------------
 /** @type {Set<string>} */
 export const CRITICAL_GROUP_KEYS = new Set([
@@ -183,7 +181,7 @@ export const CRITICAL_GROUP_KEYS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// §4  SERIAL_ITEM_IDS
+// SERIAL_ITEM_IDS
 // HVAC (as-01..07) + Water Heater (as-08..09) + Kitchen Appliances (kt-11..17)
 // ---------------------------------------------------------------------------
 /** @type {Set<string>} */
@@ -194,7 +192,7 @@ export const SERIAL_ITEM_IDS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// §5  GROUPS (37 group objects)
+// GROUPS (37 group objects)
 // Helper: build a group entry
 // ---------------------------------------------------------------------------
 /**
@@ -273,7 +271,7 @@ export const GROUPS = {
 };
 
 // ---------------------------------------------------------------------------
-// §6  ROOM_TEMPLATES (7)
+// ROOM_TEMPLATES (7)
 // ---------------------------------------------------------------------------
 /** @type {Record<string,{roomType:string,section:string,label:string,multi:boolean,prefix:string,removable:boolean,groupKeys:string[]}>} */
 export const ROOM_TEMPLATES = {
@@ -343,7 +341,7 @@ export const ROOM_TEMPLATES = {
 };
 
 // ---------------------------------------------------------------------------
-// §6  SECTIONS (nav order)
+// SECTIONS (nav order)
 // ---------------------------------------------------------------------------
 /** @type {Array<{id:string,label:string,roomType:string,multi:boolean}>} */
 export const SECTIONS = [
@@ -434,7 +432,6 @@ export function getItemsForGroup(groupKey, project) {
 
 /**
  * Return quantity chip preset values for a given unit string.
- * Contract §35 (Quantity chip presets block at end of frozen contract):
  *   sqft, sf           → [100, 250, 500]
  *   LF                 → [10, 25, 50]
  *   ea., handle, door, pier, tree, stump, pane → [1, 2, 3]

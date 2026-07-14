@@ -8,11 +8,13 @@ It is designed to work in the field, including low-connectivity situations, afte
 
 ## Live Demo
 
-Deployed app:
+Application root:
 
-```txt
+https://spark-repair-estimator-sumedh.vercel.app/
+
+Direct Dashboard:
+
 https://spark-repair-estimator-sumedh.vercel.app/#/dashboard
-```
 
 ## Submission Deliverables
 
@@ -49,6 +51,15 @@ The app has no build step, backend, login, API server, database server, or depen
 - Backup and restore using ZIP files
 - Import-as-copy support for duplicate project backups
 - No backend, no login, no API calls required
+- Universal search across rooms, groups, item names, and item IDs
+- Group-based walkthrough completion progress
+- Horizontal mobile section tabs with scroll-position fade indicators
+- Price Book “Changed Only” filter
+- Field Evidence Photo Gallery with filters and project-level counts
+- Full-screen photo preview, replace, and delete workflows
+- “Go to Source” navigation from a Gallery photo to its Walkthrough item
+- Deal Analyzer Offer Gap guidance showing required offer reduction or profit cushion
+- Atomic backup restore across project and photo records
 
 ## Tech Stack
 
@@ -312,7 +323,9 @@ It handles:
 - Price Book route
 - Review & Export route
 - Deal Analyzer route
-- save flushing on page hide
+- Gallery route
+- route-specific error screens
+- implemented routes no longer use Coming Soon fallbacks
 
 ### `styles.css`
 
@@ -394,6 +407,9 @@ It manages:
 - settings
 - photo deletion
 - project deletion
+- batch item-photo deletion
+- batch room-photo deletion
+- atomic project-and-photo backup restoration transaction
 
 ### `js/state.js`
 
@@ -415,6 +431,10 @@ It handles:
 - global price overrides
 - custom items
 - debounced persistence
+- stale-save prevention across project switches
+- complete item deletion cleanup
+- awaited room deletion/photo cleanup
+- normalized global price overrides
 
 ### `js/pricing.js`
 
@@ -447,6 +467,9 @@ It handles:
 - photo deletion
 - object URL helpers
 - serial photo counting
+- photo replacement
+- photo-change notifications
+- add/replace/delete synchronization
 
 ### `js/guardrails.js`
 
@@ -470,6 +493,7 @@ It calculates:
 - expected profit
 - maximum allowable offer
 - PASS / WATCH / FAIL status
+- centralized Deal Analyzer readiness rule
 
 ### `js/export.js`
 
@@ -483,6 +507,9 @@ It builds:
 - ZIP package
 - photo folder
 - downloadable archive
+- five workbook sheets
+- Offer Gap export
+- consistent incomplete-analyzer handling
 
 ### `js/backup.js`
 
@@ -498,6 +525,8 @@ It handles:
 - import as copy
 - unique copy naming
 - thumbnail regeneration on import
+- all restored photo records are prepared before mutation
+- project and photos are committed atomically in one IndexedDB transaction
 
 ### `js/ui/dashboard.js`
 
@@ -533,6 +562,11 @@ It handles:
 - progress
 - project reset
 - Review navigation
+- universal search and jump navigation
+- mobile tab fade indicators
+- Gallery bottom navigation
+- synchronized photo cache
+- Gallery-to-Walkthrough photo refresh
 
 ### `js/ui/priceBook.js`
 
@@ -548,6 +582,8 @@ It handles:
 - export CSV
 - warning preview
 - diff preview
+- Changed Only filter
+- exact-default override normalization
 
 ### `js/ui/summary.js`
 
@@ -561,6 +597,8 @@ It handles:
 - backup export
 - backup restore
 - Deal Analyzer link
+- Gallery navigation
+- completeness overview
 
 ### `js/ui/analyzer.js`
 
@@ -590,3 +628,18 @@ It provides:
 - progress bar
 - quantity chips
 - shared formatting helpers
+
+### `js/ui/gallery.js`
+
+The Field Evidence Gallery.
+
+It handles:
+
+- total, serial, and repair-item photo counts
+- All / Serial / Item filters
+- grouped photo cards
+- full-size preview
+- photo replacement
+- photo deletion
+- context labels
+- Go to Source navigation back to the exact Walkthrough item

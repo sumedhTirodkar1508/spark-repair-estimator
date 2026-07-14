@@ -1,8 +1,8 @@
 /**
- * js/guardrails.js — Phase 7 (Agent E)
+ * js/guardrails.js
  * Critical-group detection + pre-export warning generation.
  *
- * Named exports (frozen contract §24):
+ * Named exports:
  *   isCriticalGroup(groupKey, instanceId, project) -> boolean
  *   getCriticalWarnings(project, photosByRefKey, globalPrices) -> Warning[]
  *   getNonCriticalUnreviewed(project) -> [{instanceId, groupKey}]
@@ -16,10 +16,10 @@
 import { CRITICAL_GROUP_KEYS, ROOM_TEMPLATES, GROUPS, CATALOG_ITEMS } from './catalog.js';
 import { getEffectiveStatus } from './state.js';
 
-// Items whose presence makes ba:tub a critical group (§24, §31)
+// Items whose presence makes ba:tub a critical group
 const _BA_TUB_TRIGGERS = new Set(['ba-10', 'ba-11', 'ba-12', 'ba-13']);
 
-// Groups that require serial photos for their selected items (§24)
+// Groups that require serial photos for their selected items
 const _SERIAL_PHOTO_GROUPS = new Set(['as:hvac', 'as:waterheater']);
 
 // Pre-build a catalog name lookup map (id -> name) for warning messages
@@ -64,7 +64,7 @@ export function isCriticalGroup(groupKey, instanceId, project) {
 /**
  * Generate all pre-export warnings for a project.
  *
- * Warning types (§24):
+ * Warning types:
  *   critical-unreviewed     — critical group instance still "unreviewed"
  *   critical-missing-qty    — selected item in critical group with qty ≤ 0
  *   serial-photo-missing    — selected HVAC/water-heater item with no serial photo
@@ -147,7 +147,7 @@ export function getCriticalWarnings(project, photosByRefKey, globalPrices) {
         }
 
         // ── roof-photo-missing ───────────────────────────────────────────────
-        // Rule (§24): as-16 selected with zero photos at refKey "systems::as-16"
+        // Rule: as-16 selected with zero photos at refKey "systems::as-16"
         // AND zero kind:general photos on the "exterior" instance.
         if (groupKey === 'as:roof' && itemId === 'as-16') {
           const roofRefKey    = 'systems::as-16';

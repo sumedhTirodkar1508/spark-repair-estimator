@@ -1,5 +1,5 @@
 /**
- * js/ui/dashboard.js — Phase 4 (Agent A)
+ * js/ui/dashboard.js
  * Project list view: create / rename / delete / switch.
  *
  * Named export: render(rootEl, params)

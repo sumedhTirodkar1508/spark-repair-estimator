@@ -1,8 +1,7 @@
 /**
- * js/export.js — Phase 6 (Agent C)
+ * js/export.js
  * Excel workbook (Estimate + Photo Manifest tabs) + JSZip packaging + download trigger.
  *
- * Named exports match frozen contract §26 exactly. No default export. Vanilla ESM.
  * No DOM mutations beyond an anchor download click. No state mutations. Offline-safe.
  *
  * Depends on (reads only):
@@ -36,7 +35,7 @@ import {
 import { getPhotos } from './photos.js';
 
 import { getCriticalWarnings } from './guardrails.js';
-import { computeDeal } from './dealAnalyzer.js';
+import { computeDeal, isDealReady } from './dealAnalyzer.js';
 import { getEffectiveStatus } from './state.js';
 
 // ============================================================================
@@ -151,7 +150,7 @@ function _n(v) { const n = Number(v); return isFinite(n) ? n : 0; }
  *
  * Format: `photos/<roomLabel>_<itemName|scope>_<kind>_<index>.<ext>`
  *
- * @param {object[]} photos  array of photo records (§13)
+ * @param {object[]} photos  array of photo records
  * @param {object}   project the full project record
  * @returns {string[]}       one filename (without leading "photos/") per photo, in same order
  */
@@ -213,7 +212,7 @@ function _buildFilenames(photos, project) {
 }
 
 // ============================================================================
-// §26  buildEstimateRows
+// buildEstimateRows
 // ============================================================================
 
 /**
@@ -239,7 +238,7 @@ function _buildFilenames(photos, project) {
  *   instanceTotal: number
  * }
  *
- * Rules (contract §26, §30):
+ * Rules:
  * - unitCost     = getResolvedCost   (may be decimal)
  * - lineTotal    = computeLineTotal  (Math.ceil — already an integer)
  * - groupTotal   = computeGroupTotal (sum of integer line totals)
@@ -302,13 +301,13 @@ export function buildEstimateRows(project, globalPrices) {
 }
 
 // ============================================================================
-// §26  buildPhotoManifestRows
+// buildPhotoManifestRows
 // ============================================================================
 
 /**
  * Build the photo manifest rows for the "Photo Manifest" Excel sheet.
  *
- * Columns (fixed order, §26):
+ * Columns (fixed order):
  *   filename, scope, room, group, itemId, itemName, kind,
  *   serial, model, brand, year, notes, capturedAt
  *
@@ -427,7 +426,7 @@ export function buildPhotoManifestRows(project, photos) {
 }
 
 // ============================================================================
-// §26  buildWorkbook
+// buildWorkbook
 // ============================================================================
 
 /**
@@ -436,7 +435,7 @@ export function buildPhotoManifestRows(project, photos) {
  *   "Estimate"      — title, per-instance sections, grand total
  *   "Photo Manifest"— 13-column table; headers always present even when no photos
  *
- * GRAND TOTAL cell value = computeGrandTotal(project, globalPrices) (contract §30).
+ * GRAND TOTAL cell value = computeGrandTotal(project, globalPrices).
  * Unit Cost format: "$"#,##0.00
  * Line Total / subtotal / grand total format: "$"#,##0
  *
@@ -694,8 +693,8 @@ export function buildWorkbook(project, globalPrices, photos) {
   // ── Deal Analyzer sheet ──────────────────────────────────────────────────
   const wd = {};
   {
-    const analyzerInputs  = project.analyzer || {};
-    const hasAnalyzerData = _n(analyzerInputs.arv) > 0 || _n(analyzerInputs.offerPrice) > 0;
+    const analyzerInputs = project.analyzer || {};
+    const ready          = isDealReady(analyzerInputs);
     const headS  = _s({ bold: true, sz: 11, color: { rgb: 'FFFFFF' } }, 'EA580C', 'left', true);
     const lblS   = _s({ bold: true, sz: 10, color: { rgb: '374151' } }, 'F9FAFB', 'left',  true);
     const valS   = _s({ sz: 10, color: { rgb: '111827' } }, 'FFFFFF', 'right');
@@ -708,7 +707,7 @@ export function buildWorkbook(project, globalPrices, photos) {
     let dRow = 0;
     wdCell(dRow, 0, 'DEAL ANALYZER', headS); wdCell(dRow, 1, '', headS); dRow++;
 
-    if (!hasAnalyzerData) {
+    if (!ready) {
       wdCell(dRow, 0, 'Deal Analyzer not completed', _s({ sz: 10, color: { rgb: '9CA3AF' } }, 'FFFFFF', 'left')); wdCell(dRow, 1, '', valS); dRow++;
       wdCell(dRow, 0, 'Repair Estimate', lblS); wdCell(dRow, 1, grandTotal, valS, '"$"#,##0'); dRow++;
     } else {
@@ -803,7 +802,7 @@ export function buildWorkbook(project, globalPrices, photos) {
 }
 
 // ============================================================================
-// §26  exportProjectZip
+// exportProjectZip
 // ============================================================================
 
 /**

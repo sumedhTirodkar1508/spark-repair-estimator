@@ -1,5 +1,5 @@
 /**
- * js/ui/summary.js — Phase 7 (Agent E)
+ * js/ui/summary.js
  * Pre-export summary: grouped cost breakdown, critical guardrail warnings,
  * export/backup/restore actions, and "Mark remaining as No Work Needed".
  *

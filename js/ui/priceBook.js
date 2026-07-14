@@ -1,13 +1,10 @@
 /**
- * js/ui/priceBook.js — Phase 9 (Agent D)
+ * js/ui/priceBook.js
  * Global price administration screen.
  * Route: #/pricebook
  *
  * Named export: render(rootEl, params)
  * No default export. Vanilla ESM.
- *
- * Contract refs: §7 (Price Book UX), §19 (globalPrices in settings),
- *   §20 (pricing fns), §21 (CSV fns), §28 (route), §32 (CSV warning schema).
  *
  * This screen edits GLOBAL prices only via setGlobalPrices().
  * It does NOT touch per-project priceOverrides.

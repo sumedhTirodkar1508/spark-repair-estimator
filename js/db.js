@@ -1,6 +1,5 @@
 /**
- * js/db.js — Phase 2
- * Owner: F3 agent
+ * js/db.js
  * IndexedDB wrapper — Promise API. No business logic, no DOM, no localStorage.
  *
  * Database:  "spark-estimator"  version 1
@@ -8,8 +7,6 @@
  *   projects  — keyPath "id"
  *   photos    — keyPath "id", index "byProject" on "projectId" (non-unique)
  *   settings  — keyPath "key"
- *
- * Named exports match frozen contract §18 exactly.
  */
 
 const DB_NAME    = 'spark-estimator';
@@ -206,6 +203,137 @@ export async function deletePhotosByProject(projectId) {
       }
     };
     req.onerror = (e) => reject(e.target.error);
+
+    tx.oncomplete = () => resolve();
+    tx.onerror    = (e) => reject(e.target.error);
+    tx.onabort    = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Delete every photo for a project whose refKey ends with "::<itemId>"
+ * (i.e. item-scope photos for that item). Uses a single readwrite
+ * transaction with a cursor over the byProject index so unrelated photos
+ * (group/room/project scope, or other items) are never touched.
+ *
+ * @param {string} projectId
+ * @param {string} itemId
+ * @returns {Promise<void>}
+ */
+export async function deletePhotosByItemId(projectId, itemId) {
+  const db     = await openDB();
+  const suffix = '::' + itemId;
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(['photos'], 'readwrite');
+    const store = tx.objectStore('photos');
+    const index = store.index('byProject');
+    const req   = index.openCursor(IDBKeyRange.only(projectId));
+
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const rec = cursor.value;
+        if (typeof rec.refKey === 'string' && rec.refKey.endsWith(suffix)) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+    req.onerror = (e) => reject(e.target.error);
+
+    tx.oncomplete = () => resolve();
+    tx.onerror    = (e) => reject(e.target.error);
+    tx.onabort    = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Delete every photo for a project belonging to a specific room instance —
+ * refKey exactly equal to instanceId (room-scope) or starting with
+ * "<instanceId>::" (group/item scope within that room). Single readwrite
+ * transaction; other room instances' photos are untouched.
+ *
+ * @param {string} projectId
+ * @param {string} instanceId
+ * @returns {Promise<void>}
+ */
+export async function deletePhotosByRoomInstance(projectId, instanceId) {
+  const db     = await openDB();
+  const prefix = instanceId + '::';
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(['photos'], 'readwrite');
+    const store = tx.objectStore('photos');
+    const index = store.index('byProject');
+    const req   = index.openCursor(IDBKeyRange.only(projectId));
+
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const rec = cursor.value;
+        if (rec.refKey === instanceId || (typeof rec.refKey === 'string' && rec.refKey.startsWith(prefix))) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+    req.onerror = (e) => reject(e.target.error);
+
+    tx.oncomplete = () => resolve();
+    tx.onerror    = (e) => reject(e.target.error);
+    tx.onabort    = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Atomically write a project record and its full set of photo records in a
+ * single readwrite transaction spanning both the "projects" and "photos"
+ * stores. Callers must fully prepare `project` and `photoRecords` (including
+ * any thumbnail generation) BEFORE calling this — no async work happens once
+ * the transaction starts, so it can only resolve via transaction.oncomplete
+ * or reject via onerror/onabort. If any put/delete fails, the whole
+ * transaction aborts and the previously stored project/photos are left
+ * exactly as they were — there is no partially-restored state.
+ *
+ * @param {object} project
+ * @param {object[]} photoRecords
+ * @param {{ deletePhotosForProjectId?: string|null }} [options]
+ *   deletePhotosForProjectId: if set, every existing photo for that project
+ *   id is deleted (via the byProject index) before the new photos are put,
+ *   as part of the same transaction.
+ * @returns {Promise<void>}
+ */
+export async function putProjectWithPhotosAtomic(project, photoRecords, options = {}) {
+  const db = await openDB();
+  const deleteForProjectId = options.deletePhotosForProjectId || null;
+
+  return new Promise((resolve, reject) => {
+    const tx          = db.transaction(['projects', 'photos'], 'readwrite');
+    const projectStore = tx.objectStore('projects');
+    const photoStore    = tx.objectStore('photos');
+
+    function writeAll() {
+      projectStore.put(project);
+      for (const rec of photoRecords) {
+        photoStore.put(rec);
+      }
+    }
+
+    if (deleteForProjectId) {
+      const index = photoStore.index('byProject');
+      const req   = index.openCursor(IDBKeyRange.only(deleteForProjectId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        } else {
+          writeAll();
+        }
+      };
+      req.onerror = (e) => reject(e.target.error);
+    } else {
+      writeAll();
+    }
 
     tx.oncomplete = () => resolve();
     tx.onerror    = (e) => reject(e.target.error);

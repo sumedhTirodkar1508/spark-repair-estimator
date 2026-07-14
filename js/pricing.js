@@ -1,10 +1,7 @@
 /**
- * js/pricing.js — Phase 3
- * Owner: F4 agent
+ * js/pricing.js
  * Cost resolution, rounding (Math.ceil — ONLY in computeLineTotal), CSV parse/diff/apply/export.
  *
- * Frozen contract §20–21, §30, §32.
- * Named exports match frozen contract exactly. No default export.
  * No DOM, no IndexedDB, no localStorage, no network. Receives all data as args.
  */
 
@@ -14,7 +11,7 @@ import { CATALOG_ITEMS, getItem, getItemsForGroup, ROOM_TEMPLATES } from './cata
 const _catalogIdSet = new Set(CATALOG_ITEMS.map(item => item.id));
 
 // ============================================================================
-// §20  Cost resolution & totals
+// Cost resolution & totals
 // ============================================================================
 
 /**
@@ -112,18 +109,27 @@ export function computeInstanceTotal(instanceId, project, globalPrices) {
  * Grand total: iterate ALL selections in project.selections, add computeLineTotal per entry.
  * This is the canonical sum — equals the sum of all rounded line totals.
  *
+ * Defensive safeguard: selections for items in deletedItemIds, or items that
+ * no longer resolve through the catalog or project.customItems (e.g. a stale
+ * selection left behind by a data bug), are ignored. This never changes a
+ * valid total — it only guards against a deleted/unknown item silently
+ * contributing to the total when its selection key wasn't cleaned up.
+ *
  * @param {{selections?: Record<string,{qty:string}>, priceOverrides?: Record<string,number>, customItems?: Array<{id:string,defaultCost:number}>, deletedItemIds?: string[]}} project
  * @param {Record<string,number>} globalPrices
  * @returns {number}
  */
 export function computeGrandTotal(project, globalPrices) {
   const selections = (project && project.selections) ? project.selections : {};
+  const deletedSet = new Set((project && project.deletedItemIds) || []);
   let total = 0;
   for (const selKey of Object.keys(selections)) {
     // selKey format: "${instanceId}::${itemId}" — split on first "::"
     const sepIdx = selKey.indexOf('::');
     if (sepIdx === -1) continue;
     const itemId = selKey.slice(sepIdx + 2);
+    if (deletedSet.has(itemId)) continue;
+    if (getItem(itemId, project) === undefined) continue;
     const entry = selections[selKey];
     total += computeLineTotal(itemId, entry.qty, project, globalPrices);
   }
@@ -162,7 +168,7 @@ export function formatUnitCost(n) {
 }
 
 // ============================================================================
-// §21  CSV parse / diff / apply / export
+// CSV parse / diff / apply / export
 // ============================================================================
 
 /**

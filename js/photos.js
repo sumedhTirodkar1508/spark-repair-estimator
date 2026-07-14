@@ -1,9 +1,8 @@
 /**
- * js/photos.js — Phase 5 (Agent B)
+ * js/photos.js
  * Camera capture, canvas compress, thumbnail, photo CRUD via IndexedDB.
  *
- * Named exports match frozen contract §23 exactly.
- * No default export. Vanilla ESM. No network. No deps. No OCR.
+ * Vanilla ESM. No network. No deps. No OCR.
  * photos → {db}.  No state mutations here; callers (walkthrough.js) call
  * state.setSerialMeta for serial text fields.
  */
@@ -25,10 +24,17 @@ import { getActiveProject } from './state.js';
 const _photoSubscribers = new Set();
 
 /**
- * Subscribe to photo-collection changes (currently: deletePhoto). Lets UI
+ * Subscribe to photo-collection changes (add, replace, delete). Lets UI
  * modules that keep their own photo cache (e.g. walkthrough.js) refresh
- * immediately when a photo is removed from somewhere else (e.g. a gallery
+ * immediately when a photo changes from somewhere else (e.g. a gallery
  * screen), without a full page reload.
+ *
+ * The callback receives an event payload:
+ *   { type: 'add'|'replace'|'delete'|'batch', projectId, photoId, refKey, photo }
+ * `photo` is the full record for 'add'/'replace' and null for 'delete'/'batch'.
+ * Subscribers that don't take an argument remain fully compatible — the
+ * payload is simply an unused extra parameter for them.
+ *
  * @param {function} callback
  * @returns {function} unsubscribe
  */
@@ -37,14 +43,25 @@ export function onPhotosChanged(callback) {
   return () => _photoSubscribers.delete(callback);
 }
 
-function _emitPhotosChanged() {
+/**
+ * Emit a photo-change event to all onPhotosChanged subscribers. Exported so
+ * callers that mutate photos via a db.js batch operation directly (bypassing
+ * addPhoto/replacePhoto/deletePhoto below) can still notify subscribers —
+ * e.g. a caller that just deleted every photo for a room or an item.
+ * @param {{type:string, projectId?:string, photoId?:string, refKey?:string, photo?:object|null}} event
+ */
+export function notifyPhotosChanged(event) {
+  _emitPhotosChanged(event);
+}
+
+function _emitPhotosChanged(event) {
   for (const cb of _photoSubscribers) {
-    try { cb(); } catch (err) { console.error('[photos] onPhotosChanged callback error', err); }
+    try { cb(event); } catch (err) { console.error('[photos] onPhotosChanged callback error', err); }
   }
 }
 
 // ---------------------------------------------------------------------------
-// §23  compressImage
+// compressImage
 // ---------------------------------------------------------------------------
 
 /**
@@ -96,7 +113,7 @@ export function compressImage(file, maxDim = 1600, quality = 0.82) {
 }
 
 // ---------------------------------------------------------------------------
-// §23  makeThumbnail
+// makeThumbnail
 // ---------------------------------------------------------------------------
 
 /**
@@ -145,7 +162,7 @@ export function makeThumbnail(blob, maxDim = 320, quality = 0.7) {
 }
 
 // ---------------------------------------------------------------------------
-// §23  capturePhoto
+// capturePhoto
 // ---------------------------------------------------------------------------
 
 /**
@@ -243,11 +260,11 @@ export function capturePhoto({ scope, refKey, kind }) {
 }
 
 // ---------------------------------------------------------------------------
-// §23  addPhoto
+// addPhoto
 // ---------------------------------------------------------------------------
 
 /**
- * Build a photo record per §13 and persist it via db.putPhoto.
+ * Build a photo record and persist it via db.putPhoto.
  *
  * @param {string} projectId
  * @param {{ scope:string, refKey:string, kind:string,
@@ -273,6 +290,7 @@ export async function addPhoto(projectId, { scope, refKey, kind, blob, thumbBlob
   };
 
   await putPhoto(record);
+  _emitPhotosChanged({ type: 'add', projectId, photoId: id, refKey, photo: record });
   return id;
 }
 
@@ -312,12 +330,12 @@ export async function replacePhoto(photoId, fileOrBlob) {
   };
 
   await putPhoto(record);
-  _emitPhotosChanged();
+  _emitPhotosChanged({ type: 'replace', projectId: record.projectId, photoId: record.id, refKey: record.refKey, photo: record });
   return record;
 }
 
 // ---------------------------------------------------------------------------
-// §23  getPhotos
+// getPhotos
 // ---------------------------------------------------------------------------
 
 /**
@@ -340,7 +358,7 @@ export async function getPhotos(projectId, filter) {
 }
 
 // ---------------------------------------------------------------------------
-// §23  getThumbURL
+// getThumbURL
 // ---------------------------------------------------------------------------
 
 /**
@@ -355,22 +373,33 @@ export function getThumbURL(photoRecord) {
 }
 
 // ---------------------------------------------------------------------------
-// §23  deletePhoto
+// deletePhoto
 // ---------------------------------------------------------------------------
 
 /**
  * Delete a single photo record from IndexedDB by id.
  *
+ * Reads the record first (a cheap extra IDB get) so the emitted event can
+ * carry its projectId/refKey — subscribers need that to know whether the
+ * deletion is relevant to them without re-scanning their whole cache.
+ *
  * @param {string} photoId
  * @returns {Promise<void>}
  */
 export async function deletePhoto(photoId) {
+  const existing = await dbGetPhoto(photoId);
   await dbDeletePhoto(photoId);
-  _emitPhotosChanged();
+  _emitPhotosChanged({
+    type:      'delete',
+    projectId: existing ? existing.projectId : undefined,
+    photoId,
+    refKey:    existing ? existing.refKey : undefined,
+    photo:     null,
+  });
 }
 
 // ---------------------------------------------------------------------------
-// §23  countSerialPhotos
+// countSerialPhotos
 // ---------------------------------------------------------------------------
 
 /**

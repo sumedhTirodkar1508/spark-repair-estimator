@@ -1,13 +1,9 @@
 /**
- * js/state.js — Phase 2
- * Owner: F3 agent
+ * js/state.js
  * Active-project in-memory state + mutations + debounced persistence.
  *
  * Imports: db.js (IndexedDB ops), catalog.js (ROOM_TEMPLATES, GROUPS, CRITICAL_GROUP_KEYS,
  *          getGroupsForInstance).
- *
- * Named exports match frozen contract §22 exactly.
- * Additional export: getEffectiveStatus (additive, allowed per contract).
  *
  * Rules:
  *   - No DOM, no network.
@@ -22,9 +18,9 @@ import {
   getProject,
   putProject,
   deleteProject  as dbDeleteProject,
-  getPhotosByProject,
-  deletePhoto,
   deletePhotosByProject,
+  deletePhotosByItemId,
+  deletePhotosByRoomInstance,
   getSetting,
   putSetting,
 } from './db.js';
@@ -33,6 +29,7 @@ import {
   ROOM_TEMPLATES,
   GROUPS,
   CRITICAL_GROUP_KEYS,
+  CATALOG_ITEMS,
 } from './catalog.js';
 
 import { computeGrandTotal } from './pricing.js';
@@ -53,7 +50,16 @@ const _subscribers = new Set();
 /** @type {number|null}  setTimeout handle for debounced save */
 let _saveTimer = null;
 
-/** @type {Promise<void>|null}  in-flight putProject promise from flushSave */
+/**
+ * The exact project object captured at the moment its save was scheduled.
+ * The debounce timer always persists THIS reference, never whatever
+ * `activeProject` happens to point to when the timer fires — so a project
+ * switch that races a pending timer can never write to the wrong record.
+ * @type {object|null}
+ */
+let _pendingSaveProject = null;
+
+/** @type {Promise<void>|null}  most recently started persist Promise (in flight or settled) */
 let _flushPromise = null;
 
 // ---------------------------------------------------------------------------
@@ -68,34 +74,81 @@ function emit() {
 }
 
 /**
+ * Persist a specific project object, chaining onto any save already in
+ * flight so overlapping writes never race each other on the same store.
+ * Tracks the resulting promise in _flushPromise for flushSave() to await.
+ * @param {object} project
+ * @returns {Promise<void>}
+ */
+function _persistProject(project) {
+  if (!project) return Promise.resolve();
+  const prior = _flushPromise || Promise.resolve();
+  const p = prior
+    .catch(() => {}) // a prior failure must not block this write
+    .then(() => {
+      project.updatedAt = new Date().toISOString();
+      return putProject(project);
+    })
+    .catch(e => console.error('[state] persist error', e));
+  _flushPromise = p;
+  return p;
+}
+
+/** Cancel any pending debounced save without persisting it. */
+function _cancelPendingSave() {
+  if (_saveTimer !== null) clearTimeout(_saveTimer);
+  _saveTimer = null;
+  _pendingSaveProject = null;
+}
+
+/**
  * Debounced save: coalesces rapid calls into one write ~600 ms after the last call.
- * Sets activeProject.updatedAt before writing.
+ * Captures the current activeProject reference at call time (not at fire time),
+ * so a later reassignment of activeProject cannot redirect this write. If a
+ * different project is already pending when called (edits to the previous
+ * active project were never explicitly flushed), that pending save is flushed
+ * immediately before the new debounce window starts, so no edits are lost.
  */
 export function scheduleSave() {
-  if (_saveTimer !== null) clearTimeout(_saveTimer);
+  const project = activeProject;
+  if (!project) return;
+
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer);
+    if (_pendingSaveProject && _pendingSaveProject !== project) {
+      _persistProject(_pendingSaveProject);
+    }
+  }
+
+  _pendingSaveProject = project;
   _saveTimer = setTimeout(() => {
     _saveTimer = null;
-    if (!activeProject) return;
-    activeProject.updatedAt = new Date().toISOString();
-    putProject(activeProject).catch(e => console.error('[state] scheduleSave error', e));
+    const target = _pendingSaveProject;
+    _pendingSaveProject = null;
+    _persistProject(target);
   }, 600);
 }
 
 /**
- * Cancel any pending debounced save and immediately persist.
- * Should be called on pagehide/visibilitychange.
+ * Cancel any pending debounced save and immediately persist its target (the
+ * project that was active when the save was scheduled — or the currently
+ * active project if nothing is pending). Waits for any save already in
+ * flight first, so writes never overlap. Should be called on
+ * pagehide/visibilitychange, and before replacing the active project.
  * @returns {Promise<void>}
  */
 export async function flushSave() {
+  let target = null;
   if (_saveTimer !== null) {
     clearTimeout(_saveTimer);
     _saveTimer = null;
+    target = _pendingSaveProject;
+    _pendingSaveProject = null;
   }
-  if (!activeProject) return;
-  activeProject.updatedAt = new Date().toISOString();
-  _flushPromise = putProject(activeProject);
-  await _flushPromise;
-  _flushPromise = null;
+
+  const project = target || activeProject;
+  if (!project) return;
+  await _persistProject(project);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,8 +163,10 @@ export async function flushSave() {
 export async function initState() {
   await openDB();
 
-  // Load global price overrides from settings store
-  globalPrices = (await getSetting('globalPrices')) || {};
+  // Load global price overrides from settings store. Normalize on load too,
+  // in case overrides equal to the catalog default were persisted before
+  // setGlobalPrices() started stripping them (defensive, one-time cleanup).
+  globalPrices = _normalizeGlobalPrices((await getSetting('globalPrices')) || {});
 
   // Try to restore the previously active project
   const savedId = localStorage.getItem('spark.activeProjectId');
@@ -213,6 +268,11 @@ export async function listProjectsWithTotals() {
  * @returns {Promise<object>}
  */
 export async function createProject(name) {
+  // Persist any pending edits to the currently active project before it is
+  // replaced — otherwise a debounced timer for the old project could later
+  // fire and, under the old buggy behavior, target the wrong (new) project.
+  await flushSave();
+
   const now = new Date().toISOString();
   const project = {
     id:              'proj_' + Date.now(),
@@ -273,11 +333,10 @@ export async function switchProject(id) {
  * @returns {Promise<void>}
  */
 export async function reloadActiveProject(id) {
-  // Drop any pending debounced save for the now-stale in-memory project.
-  if (_saveTimer !== null) {
-    clearTimeout(_saveTimer);
-    _saveTimer = null;
-  }
+  // Drop (do not flush) any pending debounced save for the now-stale
+  // in-memory project — flushing it would overwrite the freshly-written
+  // record we're about to load with stale data.
+  _cancelPendingSave();
   const project = await getProject(id);
   if (!project) throw new Error(`reloadActiveProject: project "${id}" not found`);
   activeProject = project;
@@ -316,6 +375,12 @@ export async function renameProject(id, name) {
  * @returns {Promise<void>}
  */
 export async function deleteProject(id) {
+  // Drop (never flush) any pending debounced save targeting this project —
+  // otherwise the timer could fire after deletion and resurrect the record.
+  if (_pendingSaveProject && _pendingSaveProject.id === id) {
+    _cancelPendingSave();
+  }
+
   // Cascade delete photos first
   await deletePhotosByProject(id);
   await dbDeleteProject(id);
@@ -425,11 +490,15 @@ export function addRoomInstance(roomType) {
 /**
  * Remove a room instance (only if removable).
  * Clears all selections/serials/groupStatus keys scoped to this instance.
- * Deletes any photos associated with this instance.
+ * Awaits deletion of every photo associated with this instance (single
+ * IndexedDB transaction) before resolving, so callers never report success
+ * while cleanup is still in flight — an immediate export or Gallery
+ * navigation right after this resolves will never show the deleted room's
+ * photos.
  * @param {string} instanceId
- * @returns {void}
+ * @returns {Promise<void>}
  */
-export function removeRoomInstance(instanceId) {
+export async function removeRoomInstance(instanceId) {
   const room = activeProject.rooms.find(r => r.instanceId === instanceId);
   if (!room) return;
   if (!room.removable) return;
@@ -454,24 +523,10 @@ export function removeRoomInstance(instanceId) {
     activeProject.bulkMarkedGroups = activeProject.bulkMarkedGroups.filter(k => !k.startsWith(prefix));
   }
 
-  // Delete photos associated with this instance asynchronously (fire and forget,
-  // then scheduleSave will run after). We query by project and filter by refKey prefix.
-  getPhotosByProject(activeProject.id).then(photos => {
-    const promises = [];
-    for (const ph of photos) {
-      // Photos are associated by refKey: "instanceId::..." or scope=="room" refKey===instanceId
-      if (
-        ph.refKey === instanceId ||
-        (typeof ph.refKey === 'string' && ph.refKey.startsWith(instanceId + '::'))
-      ) {
-        promises.push(deletePhoto(ph.id));
-      }
-    }
-    return Promise.all(promises);
-  }).catch(e => console.error('[state] removeRoomInstance photo cleanup error', e));
-
   scheduleSave();
   emit();
+
+  await deletePhotosByRoomInstance(activeProject.id, instanceId);
 }
 
 /**
@@ -563,8 +618,8 @@ export function toggleItem(instanceId, itemId) {
   } else {
     // Selecting: if the group this item belongs to is currently stored as "none",
     // clear that stored "none" so the group transitions to "work" and won't snap
-    // back to "No Work Needed" if the item is later deselected (contract §10:
-    // selections are the source of truth and override stored status).
+    // back to "No Work Needed" if the item is later deselected — selections
+    // are the source of truth and always override stored group status.
     _clearStoredNoneForItem(instanceId, itemId);
     activeProject.selections[key] = { qty: '', note: '' };
   }
@@ -633,7 +688,8 @@ export function setNote(instanceId, itemId, note) {
  * Set explicit group status.
  * status "unreviewed" → deletes the stored key (default).
  * status "none"       → stores "none"; also clears any selections in that group instance
- *                       (defence-in-depth: UI confirms first per §29, but we clear here too).
+ *                       (defence-in-depth: the UI confirms first, but we clear here too
+ *                       in case this is called directly without going through that flow).
  * status "work"       → stores "work" (typically implicit from selections, but may be set
  *                       directly if the caller needs to).
  * @param {string} instanceId
@@ -728,15 +784,46 @@ export function clearItemPriceOverride(itemId) {
 // Global prices
 // ---------------------------------------------------------------------------
 
+/** Map of catalog item id -> defaultCost, used to normalize global overrides. */
+const _catalogDefaultCost = new Map(CATALOG_ITEMS.map(item => [item.id, item.defaultCost]));
+
+/**
+ * A catalog price equal to its exact catalog default is not a real override.
+ * Returns a NEW object with any such keys dropped. Unknown/custom ids (not
+ * in the catalog) are left untouched — "equal to default" doesn't apply to
+ * them. Legitimate zero-dollar overrides are preserved when the catalog
+ * default is non-zero.
+ * @param {object} obj  { itemId: cost }
+ * @returns {object}
+ */
+function _normalizeGlobalPrices(obj) {
+  const next = { ...(obj || {}) };
+  for (const [id, val] of Object.entries(next)) {
+    if (!_catalogDefaultCost.has(id)) continue;
+    const num = Number(val);
+    const def = _catalogDefaultCost.get(id);
+    if (Number.isFinite(num) && Number.isFinite(def) && num === def) {
+      delete next[id];
+    }
+  }
+  return next;
+}
+
 /**
  * Replace the global price book.
- * Persists both the price map and a timestamp to IndexedDB settings.
+ *
+ * Normalizes at this single persistence boundary (see _normalizeGlobalPrices)
+ * so "overridden" badges, the Reset button, and the Changed Only filter stay
+ * consistent no matter which caller produced the value (manual edit, CSV
+ * import, Reset All).
+ *
  * @param {object} obj  { itemId: cost }
  * @returns {Promise<void>}
  */
 export async function setGlobalPrices(obj) {
-  globalPrices = obj;
-  await putSetting('globalPrices', obj);
+  const next = _normalizeGlobalPrices(obj);
+  globalPrices = next;
+  await putSetting('globalPrices', next);
   await putSetting('priceBookUpdatedAt', new Date().toISOString());
   emit();
 }
@@ -759,31 +846,40 @@ export function addCustomItem({ name, unit, defaultCost, groupKey }) {
 }
 
 /**
- * Delete an item from the project.
- * - Custom item (id starts with "cust_"): removes from customItems + clears any
- *   selections/overrides for it.
- * - Catalog item: pushes to deletedItemIds (deduplicated).
+ * Delete an item from the project — catalog or custom.
+ * Removes every selection, serial-metadata entry, and price override scoped
+ * to this item (composite keys ending in "::<itemId>"), so it stops
+ * contributing to totals immediately regardless of prior selections. Custom
+ * items are also removed from customItems; catalog items are added to
+ * deletedItemIds (deduplicated) so they're hidden project-wide.
+ *
+ * Awaits item-scope photo cleanup (single IndexedDB transaction) before
+ * resolving, so callers can safely report success only once cleanup is done.
+ *
  * @param {string} itemId
- * @returns {void}
+ * @returns {Promise<void>}
  */
-export function deleteItem(itemId) {
-  if (itemId.startsWith('cust_')) {
-    // Remove from customItems
-    activeProject.customItems = activeProject.customItems.filter(ci => ci.id !== itemId);
-    // Clear any selections for this custom item across all instances
-    for (const key of Object.keys(activeProject.selections)) {
-      if (key.endsWith('::' + itemId)) delete activeProject.selections[key];
-    }
-    // Clear any price override
-    delete activeProject.priceOverrides[itemId];
-  } else {
-    // Catalog item → hide in this project
-    if (!activeProject.deletedItemIds.includes(itemId)) {
-      activeProject.deletedItemIds.push(itemId);
-    }
+export async function deleteItem(itemId) {
+  const suffix = '::' + itemId;
+
+  for (const key of Object.keys(activeProject.selections)) {
+    if (key.endsWith(suffix)) delete activeProject.selections[key];
   }
+  for (const key of Object.keys(activeProject.serials)) {
+    if (key.endsWith(suffix)) delete activeProject.serials[key];
+  }
+  delete activeProject.priceOverrides[itemId];
+
+  if (itemId.startsWith('cust_')) {
+    activeProject.customItems = activeProject.customItems.filter(ci => ci.id !== itemId);
+  } else if (!activeProject.deletedItemIds.includes(itemId)) {
+    activeProject.deletedItemIds.push(itemId);
+  }
+
   scheduleSave();
   emit();
+
+  await deletePhotosByItemId(activeProject.id, itemId);
 }
 
 /**
@@ -813,13 +909,13 @@ export function setAnalyzer(fields) {
 }
 
 // ---------------------------------------------------------------------------
-// Effective status helper (additive export — §10, not in original 28 but allowed)
+// Effective status helper
 // ---------------------------------------------------------------------------
 
 /**
  * Derive the effective group status for a group instance.
  *
- * Rules (contract §10):
+ * Rules:
  *   1. If any selection exists for ANY item in this group instance → "work"
  *      (selections are the source of truth; overrides stored status).
  *   2. Else if stored groupStatus key is "none" → "none".
@@ -867,7 +963,7 @@ export function getEffectiveStatus(instanceId, groupKey, project) {
 /**
  * Mark all non-critical group instances that are "unreviewed" as "none".
  *
- * Critical rules (contract §31):
+ * Critical rules:
  *   - groupKey in CRITICAL_GROUP_KEYS is critical, EXCEPT:
  *   - "ba:tub" is critical ONLY when one of ba-10/ba-11/ba-12/ba-13 is selected
  *     in that instance (otherwise it's non-critical and may be swept).
